@@ -1,0 +1,1190 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
+import {
+  crearBackup,
+  deleteBackup,
+  deleteSesion,
+  deleteTodasSesiones,
+  DIAS_BACKUP,
+  fetchBackups,
+  restaurarBackup,
+  setPreciosRemoto,
+  setTrabajadoresRemoto,
+  subscribeSesiones,
+  upsertSesion,
+  type Backup,
+} from "@/lib/db";
+import { uid, useStore } from "@/lib/store";
+import {
+  BALONES,
+  CONFIG_PASSWORD,
+  ISLAS,
+  PRODUCTOS,
+  TURNOS,
+  turnoLabel,
+} from "@/lib/config";
+import {
+  diaMenos,
+  diaOperativo,
+  diaOperativoActual,
+  diasConAlgunaSesionCerrada,
+  diasCompletos,
+  islasCerradasDeTurno,
+  turnosCompletosDeDia,
+  turnosConAlgunaIslaCerrada,
+} from "@/lib/calc";
+import type { PrecioKey, Sesion, TurnoId } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { SesionVista } from "@/components/grifo/sesion-vista";
+import { ReporteDiaVista } from "@/components/grifo/reporte-dia-vista";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Fuel,
+  LogOut,
+  Wifi,
+  Activity,
+  CalendarDays,
+  Tag,
+  Users,
+  Download,
+  Trash2,
+  Settings,
+  AlertTriangle,
+  DatabaseBackup,
+  RotateCcw,
+  Save,
+} from "lucide-react";
+
+// Días operativos a conservar; los más antiguos (ya completos) se borran
+// automáticamente. Ver limpieza en el efecto de retención más abajo.
+const DIAS_A_CONSERVAR = 7;
+
+type Vista = "activos" | "reporte" | "usuarios" | "exportar" | "config";
+
+export default function AdminPage() {
+  const router = useRouter();
+  const auth = useStore((s) => s.auth);
+  const logout = useStore((s) => s.logout);
+  const precios = useStore((s) => s.precios);
+  const setPrecio = useStore((s) => s.setPrecio);
+  const trabajadores = useStore((s) => s.trabajadores);
+  const setTrabajadoresStore = useStore((s) => s.setTrabajadores);
+
+  // Una sola fuente acotada y en vivo: los últimos 60 días operativos.
+  // Incluye tanto los turnos activos como los días recientes para reporte/
+  // export. Reemplaza a los dos onSnapshot de Firestore por una suscripción
+  // Realtime de Supabase.
+  const [remoteList, setRemoteList] = useState<Sesion[]>([]);
+  const [vista, setVista] = useState<Vista>("activos");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedDia, setSelectedDia] = useState<string | null>(null);
+  const [exportTurno, setExportTurno] = useState<TurnoId>("manana");
+  const [exportando, setExportando] = useState(false);
+  const [exportandoGeneral, setExportandoGeneral] = useState(false);
+  const [exportTurnoIsla, setExportTurnoIsla] = useState<TurnoId>("manana");
+  const [exportIslaId, setExportIslaId] = useState<string | null>(null);
+  const [exportandoIsla, setExportandoIsla] = useState(false);
+  const [nuevoNombre, setNuevoNombre] = useState("");
+  const [conectado, setConectado] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const resetSesiones = useStore((s) => s.resetSesiones);
+  const [configPass, setConfigPass] = useState("");
+  const [configUnlocked, setConfigUnlocked] = useState(false);
+  const [confirmandoReset, setConfirmandoReset] = useState(false);
+  const [reseteando, setReseteando] = useState(false);
+  // ---- Backups (copias de seguridad) ----
+  const [backups, setBackups] = useState<Backup[]>([]);
+  const [creandoBackup, setCreandoBackup] = useState(false);
+  const [restaurandoId, setRestaurandoId] = useState<string | null>(null);
+  const [backupARestaurar, setBackupARestaurar] = useState<Backup | null>(null);
+  useEffect(() => setHydrated(true), []);
+
+  useEffect(() => {
+    if (hydrated && (!auth || auth.rol !== "admin")) router.replace("/");
+  }, [hydrated, auth, router]);
+
+  // Suscripción en vivo a los últimos 60 días operativos (turnos activos +
+  // días recientes para reporte/export), vía Supabase Realtime.
+  useEffect(() => {
+    const corte = diaMenos(diaOperativoActual(), 60);
+    const unsub = subscribeSesiones(corte, (lista) => {
+      setRemoteList(lista);
+      setConectado(true);
+    });
+    return unsub;
+  }, []);
+
+  const remote = remoteList;
+
+  const activos = useMemo(
+    () => remote.filter((s) => !s.cerrada).sort((a, b) => b.createdAt - a.createdAt),
+    [remote]
+  );
+  // Superset de "días completos": incluye días con progreso parcial (al
+  // menos una isla cerrada), necesario para poder exportar por isla
+  // individual antes de que el turno completo (3 islas) termine.
+  const dias = useMemo(() => diasConAlgunaSesionCerrada(remote), [remote]);
+  // Turnos ya completos del día seleccionado (para exportar por turno, 3 islas).
+  const turnosListos = useMemo(
+    () => (selectedDia ? turnosCompletosDeDia(remote, selectedDia) : []),
+    [remote, selectedDia]
+  );
+  // Turnos con AL MENOS una isla cerrada (para exportar por isla individual).
+  const turnosConIsla = useMemo(
+    () => (selectedDia ? turnosConAlgunaIslaCerrada(remote.filter((s) => diaOperativo(s) === selectedDia)) : []),
+    [remote, selectedDia]
+  );
+
+  useEffect(() => {
+    if (!selectedId && activos.length) setSelectedId(activos[0].id);
+  }, [activos, selectedId]);
+  useEffect(() => {
+    if (!selectedDia && dias.length) setSelectedDia(dias[0]);
+  }, [dias, selectedDia]);
+  // Asegura que el turno a exportar sea uno que esté completo.
+  useEffect(() => {
+    if (turnosListos.length && !turnosListos.includes(exportTurno)) {
+      setExportTurno(turnosListos[0]);
+    }
+  }, [turnosListos, exportTurno]);
+  // Asegura que el turno/isla del export individual sean válidos.
+  useEffect(() => {
+    if (turnosConIsla.length && !turnosConIsla.includes(exportTurnoIsla)) {
+      setExportTurnoIsla(turnosConIsla[0]);
+    }
+  }, [turnosConIsla, exportTurnoIsla]);
+
+  const seleccionada = remote.find((s) => s.id === selectedId);
+  const delDia = useMemo(
+    () => remote.filter((s) => diaOperativo(s) === selectedDia),
+    [remote, selectedDia]
+  );
+  // Islas con sesión cerrada para el turno del export individual.
+  const islasCerradasTurnoIsla = useMemo(
+    () => islasCerradasDeTurno(delDia, exportTurnoIsla),
+    [delDia, exportTurnoIsla]
+  );
+  useEffect(() => {
+    if (islasCerradasTurnoIsla.length && !islasCerradasTurnoIsla.includes(exportIslaId ?? "")) {
+      setExportIslaId(islasCerradasTurnoIsla[0]);
+    } else if (!islasCerradasTurnoIsla.length) {
+      setExportIslaId(null);
+    }
+  }, [islasCerradasTurnoIsla, exportIslaId]);
+
+  // ---- Retención: conservar solo los últimos DIAS_A_CONSERVAR días
+  // COMPLETOS (9 turnos cerrados). Los más antiguos se borran solos en
+  // Firestore (y de la vista local) en cuanto aparece un día completo de más.
+  useEffect(() => {
+    const completos = diasCompletos(remote); // más reciente primero
+    if (completos.length <= DIAS_A_CONSERVAR) return;
+    const diasABorrar = new Set(completos.slice(DIAS_A_CONSERVAR));
+    const aBorrar = remote.filter((s) => diasABorrar.has(diaOperativo(s)));
+    if (!aBorrar.length) return;
+    aBorrar.forEach((s) => deleteSesion(s.id).catch(() => {}));
+    const idsBorrados = new Set(aBorrar.map((s) => s.id));
+    setRemoteList((prev) => prev.filter((s) => !idsBorrados.has(s.id)));
+  }, [remote]);
+
+  // ---- Persistencia de ediciones del admin ----
+  // Actualiza primero localmente (optimista) para que la UI responda al instante
+  // mientras el guardado en Firestore viaja de ida y vuelta (onSnapshot tardaría
+  // y el input "se resetearía" entre cada tecla si solo dependiéramos de eso).
+  function persist(updated: Sesion) {
+    // Optimista en la lista local; el documento remoto se actualiza en upsert.
+    setRemoteList((prev) =>
+      prev.map((s) => (s.id === updated.id ? updated : s))
+    );
+    upsertSesion(updated).catch(() => {});
+  }
+  function onChangePrecio(k: PrecioKey, v: number) {
+    setPrecio(k, v);
+    setPreciosRemoto({ ...precios, [k]: v }).catch(() => {});
+  }
+
+  // ---- Gestión de usuarios (trabajadores) ----
+  function persistTrabajadores(nombres: string[]) {
+    setTrabajadoresStore(nombres);
+    setTrabajadoresRemoto(nombres).catch(() => {});
+  }
+  function agregarTrabajador() {
+    const nombre = nuevoNombre.trim();
+    if (!nombre) return;
+    if (trabajadores.some((t) => t.toLowerCase() === nombre.toLowerCase())) return;
+    persistTrabajadores([...trabajadores, nombre]);
+    setNuevoNombre("");
+  }
+  function quitarTrabajador(nombre: string) {
+    persistTrabajadores(trabajadores.filter((t) => t !== nombre));
+  }
+
+  // ---- Exportar reporte a Excel (plantilla por isla) ----
+  async function descargarXlsx() {
+    if (!selectedDia) return;
+    const sesionesTurno = delDia.filter((s) => s.turno === exportTurno);
+    setExportando(true);
+    try {
+      const res = await fetch("/api/export-isla", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dia: selectedDia,
+          turno: exportTurno,
+          sesiones: sesionesTurno,
+          precios,
+        }),
+      });
+      if (!res.ok) throw new Error("export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `reporte_${selectedDia}_${exportTurno}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("No se pudo generar el Excel");
+    } finally {
+      setExportando(false);
+    }
+  }
+
+  // ---- Exportar reporte de UNA isla individual (no requiere que las 3
+  // islas del turno hayan terminado, solo que esa isla en particular cerró).
+  async function descargarXlsxIsla() {
+    if (!selectedDia || !exportIslaId) return;
+    const sesionIsla = delDia.filter(
+      (s) => s.turno === exportTurnoIsla && s.islaId === exportIslaId
+    );
+    setExportandoIsla(true);
+    try {
+      const res = await fetch("/api/export-isla", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dia: selectedDia,
+          turno: exportTurnoIsla,
+          sesiones: sesionIsla,
+          precios,
+        }),
+      });
+      if (!res.ok) throw new Error("export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const islaNombre = ISLAS.find((i) => i.id === exportIslaId)?.nombre ?? exportIslaId;
+      a.download = `reporte_${selectedDia}_${exportTurnoIsla}_${islaNombre}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("No se pudo generar el Excel de la isla");
+    } finally {
+      setExportandoIsla(false);
+    }
+  }
+
+  // ---- Resetear toda la base de datos (Configuraciones, solo pruebas) ----
+  async function resetBaseDatos() {
+    setReseteando(true);
+    try {
+      await deleteTodasSesiones();
+      resetSesiones();
+      setRemoteList([]);
+      setSelectedId(null);
+      setSelectedDia(null);
+      toast.success("Base de datos reseteada");
+    } catch {
+      toast.error("No se pudo resetear la base de datos");
+    } finally {
+      setReseteando(false);
+      setConfirmandoReset(false);
+    }
+  }
+
+  // ---- Backups (copias de seguridad, máx 3) ----
+  const refrescarBackups = async () => {
+    try {
+      setBackups(await fetchBackups());
+    } catch {
+      /* silencioso: la lista conserva su último estado */
+    }
+  };
+  // Carga la lista de copias al conectar. La creación es automática al
+  // completarse cada turno (desde el cierre del trabajador) y también manual.
+  useEffect(() => {
+    if (!conectado) return;
+    refrescarBackups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conectado]);
+
+  async function backupManual() {
+    setCreandoBackup(true);
+    try {
+      await crearBackup();
+      await refrescarBackups();
+      toast.success("Copia de seguridad creada");
+    } catch {
+      toast.error("No se pudo crear la copia de seguridad");
+    } finally {
+      setCreandoBackup(false);
+    }
+  }
+
+  async function confirmarRestaurar() {
+    if (!backupARestaurar) return;
+    setRestaurandoId(backupARestaurar.id);
+    try {
+      await restaurarBackup(backupARestaurar);
+      toast.success("Datos restaurados desde la copia de seguridad");
+    } catch {
+      toast.error("No se pudo restaurar la copia");
+    } finally {
+      setRestaurandoId(null);
+      setBackupARestaurar(null);
+    }
+  }
+
+  async function eliminarBackup(id: string) {
+    try {
+      await deleteBackup(id);
+      await refrescarBackups();
+      toast.success("Copia eliminada");
+    } catch {
+      toast.error("No se pudo eliminar la copia");
+    }
+  }
+
+  function descargarBackup(b: Backup) {
+    const blob = new Blob([JSON.stringify(b, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `backup_grifosys_${b.dia}_${b.id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---- Exportar reporte GENERAL del día (plantilla "madre") ----
+  async function descargarGeneral() {
+    if (!selectedDia) return;
+    setExportandoGeneral(true);
+    try {
+      const res = await fetch("/api/export-general", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dia: selectedDia, sesiones: delDia, precios }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        toast.error(body?.error || "No se pudo generar el reporte general");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `reporte_general_${selectedDia}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("No se pudo generar el reporte general");
+    } finally {
+      setExportandoGeneral(false);
+    }
+  }
+
+  function onUpdateRegistro(
+    sesionId: string,
+    tipo: string,
+    rowId: string,
+    patch: Record<string, unknown>
+  ) {
+    const s = remote.find((x) => x.id === sesionId);
+    if (!s) return;
+    const arr = ((s as unknown as Record<string, { id: string }[]>)[tipo] || []).map(
+      (r) => (r.id === rowId ? { ...r, ...patch } : r)
+    );
+    persist({ ...s, [tipo]: arr });
+  }
+  function onRemoveRegistro(sesionId: string, tipo: string, rowId: string) {
+    const s = remote.find((x) => x.id === sesionId);
+    if (!s) return;
+    const arr = ((s as unknown as Record<string, { id: string }[]>)[tipo] || []).filter(
+      (r) => r.id !== rowId
+    );
+    persist({ ...s, [tipo]: arr });
+  }
+  // El admin agrega un registro que el trabajador olvidó anotar (p. ej. un
+  // pago, un crédito) directamente desde "Reporte del día".
+  function onAddRegistro(sesionId: string, tipo: string, row: Record<string, unknown>) {
+    const s = remote.find((x) => x.id === sesionId);
+    if (!s) return;
+    const arr = [
+      ...((s as unknown as Record<string, { id: string }[]>)[tipo] ?? []),
+      { ...row, id: uid() },
+    ];
+    persist({ ...s, [tipo]: arr });
+  }
+  function onUpdateOdometro(
+    sesionId: string,
+    mangueraId: string,
+    patch: { entrada?: number; salida?: number }
+  ) {
+    const s = remote.find((x) => x.id === sesionId);
+    if (!s) return;
+    const od = {
+      ...s.odometros,
+      [mangueraId]: { ...s.odometros[mangueraId], ...patch },
+    };
+    persist({ ...s, odometros: od });
+  }
+
+  function abrirIsla(islaId: string) {
+    const s = activos.find((x) => x.islaId === islaId);
+    if (s) setSelectedId(s.id);
+  }
+
+  if (!hydrated || !auth || auth.rol !== "admin") return null;
+
+  return (
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-950 dark:to-slate-900">
+      {/* Header */}
+      <header className="flex items-center justify-between border-b bg-slate-900 px-4 py-2 text-white shadow-md">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 animate-pulse-ring">
+            <Fuel className="h-5 w-5 text-white" />
+          </span>
+          <span className="text-lg font-bold">GrifoSys</span>
+          <span className="rounded bg-white/10 px-2 py-0.5 text-xs font-medium">
+            Administrador
+          </span>
+          <span
+            className={cn(
+              "ml-2 flex items-center gap-1 text-xs transition-colors",
+              conectado ? "text-emerald-400" : "text-slate-400"
+            )}
+          >
+            <Wifi className={cn("h-3.5 w-3.5", !conectado && "animate-pulse")} />
+            {conectado ? "Tiempo real" : "Conectando…"}
+          </span>
+        </div>
+
+        {/* Recordatorio en movimiento: guardar los reportes en la PC */}
+        <div className="mx-4 hidden flex-1 overflow-hidden md:block">
+          <div className="marquee-track gap-12 text-xs font-medium text-amber-300/90">
+            <span className="inline-flex items-center gap-2">
+              💾 No olvides descargar y guardar los reportes en tu PC — los
+              datos se conservan solo los últimos 7 días.
+            </span>
+            <span className="inline-flex items-center gap-2" aria-hidden>
+              💾 No olvides descargar y guardar los reportes en tu PC — los
+              datos se conservan solo los últimos 7 días.
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <PreciosEditor precios={precios} onChange={onChangePrecio} />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-white hover:bg-white/10 hover:text-white"
+            onClick={() => {
+              logout();
+              router.replace("/");
+            }}
+          >
+            <LogOut className="mr-1 h-4 w-4" /> Salir
+          </Button>
+        </div>
+      </header>
+
+      <div className="flex flex-1">
+        {/* Sidebar */}
+        <aside className="w-56 shrink-0 border-r bg-card p-3">
+          <nav className="mb-3 space-y-1">
+            <SideNav
+              activo={vista === "activos"}
+              onClick={() => setVista("activos")}
+              icon={<Activity className="h-4 w-4" />}
+              label="Turnos activos"
+            />
+            <SideNav
+              activo={vista === "reporte"}
+              onClick={() => setVista("reporte")}
+              icon={<CalendarDays className="h-4 w-4" />}
+              label="Reporte del día"
+            />
+            <SideNav
+              activo={vista === "usuarios"}
+              onClick={() => setVista("usuarios")}
+              icon={<Users className="h-4 w-4" />}
+              label="Usuarios"
+            />
+            <SideNav
+              activo={vista === "exportar"}
+              onClick={() => setVista("exportar")}
+              icon={<Download className="h-4 w-4" />}
+              label="Exportar"
+            />
+            <SideNav
+              activo={vista === "config"}
+              onClick={() => setVista("config")}
+              icon={<Settings className="h-4 w-4" />}
+              label="Configuraciones"
+            />
+          </nav>
+
+          {vista === "activos" ? (
+            <div className="space-y-2">
+              <h2 className="text-[11px] font-bold tracking-wide text-muted-foreground">
+                EN CURSO
+              </h2>
+              {activos.length === 0 && (
+                <p className="text-xs text-muted-foreground">No hay turnos activos.</p>
+              )}
+              {activos.map((s, i) => {
+                const isla = ISLAS.find((i) => i.id === s.islaId);
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setSelectedId(s.id)}
+                    style={{ animationDelay: `${i * 50}ms` }}
+                    className={cn(
+                      "w-full animate-fade-up rounded-lg border p-2 text-left text-xs card-lift hover:bg-accent",
+                      selectedId === s.id && "border-primary bg-accent ring-1 ring-primary"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold">{isla?.nombre}</span>
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                    </div>
+                    <div className="text-muted-foreground">
+                      {turnoLabel(s.turno)} · {s.trabajador}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : vista === "reporte" || vista === "exportar" ? (
+            <div className="space-y-2">
+              <h2 className="text-[11px] font-bold tracking-wide text-muted-foreground">
+                DÍAS FINALIZADOS
+              </h2>
+              {dias.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Aún no hay un día con todos sus turnos finalizados.
+                </p>
+              )}
+              {dias.map((d, i) => (
+                <button
+                  key={d}
+                  onClick={() => setSelectedDia(d)}
+                  style={{ animationDelay: `${i * 50}ms` }}
+                  className={cn(
+                    "w-full animate-fade-up rounded-lg border p-2 text-left text-xs card-lift hover:bg-accent",
+                    selectedDia === d && "border-primary bg-accent ring-1 ring-primary"
+                  )}
+                >
+                  📅 {d}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </aside>
+
+        {/* Contenido */}
+        <main className="flex-1 p-3">
+          {vista === "activos" ? (
+            <>
+              <div className="mb-3 flex gap-2">
+                {ISLAS.map((isla) => {
+                  const activa = activos.find((s) => s.islaId === isla.id);
+                  const activoTab = seleccionada?.islaId === isla.id;
+                  return (
+                    <button
+                      key={isla.id}
+                      onClick={() => abrirIsla(isla.id)}
+                      disabled={!activa}
+                      className={cn(
+                        "rounded-lg border px-4 py-1.5 text-sm font-medium transition-all",
+                        activa ? "hover:bg-accent" : "cursor-not-allowed opacity-40",
+                        activoTab && "border-primary bg-primary text-primary-foreground"
+                      )}
+                    >
+                      {isla.nombre}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="rounded-xl border bg-card p-4 shadow-sm">
+                {seleccionada ? (
+                  <SesionVista sesion={seleccionada} precios={precios} />
+                ) : (
+                  <div className="py-20 text-center text-sm text-muted-foreground">
+                    Selecciona un turno activo para ver su detalle en tiempo real.
+                  </div>
+                )}
+              </div>
+            </>
+          ) : vista === "reporte" ? (
+            selectedDia && delDia.length > 0 ? (
+              <ReporteDiaVista
+                delDia={delDia}
+                dia={selectedDia}
+                precios={precios}
+                onUpdateRegistro={onUpdateRegistro}
+                onRemoveRegistro={onRemoveRegistro}
+                onAddRegistro={onAddRegistro}
+                onUpdateOdometro={onUpdateOdometro}
+              />
+            ) : (
+              <div className="rounded-xl border bg-card py-20 text-center text-sm text-muted-foreground shadow-sm">
+                El reporte aparece a medida que los turnos van finalizando (un
+                turno se considera listo cuando sus 3 islas cerraron).
+              </div>
+            )
+          ) : vista === "usuarios" ? (
+            <div className="max-w-md rounded-xl border bg-card p-4 shadow-sm">
+              <h3 className="mb-1 text-base font-bold">Gestión de usuarios</h3>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Trabajadores que pueden iniciar sesión y elegir turno. Los
+                cambios se aplican en todo el sistema al instante.
+              </p>
+              <div className="mb-3 flex gap-2">
+                <Input
+                  placeholder="Nombre del trabajador"
+                  value={nuevoNombre}
+                  onChange={(e) => setNuevoNombre(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && agregarTrabajador()}
+                  className="h-9"
+                />
+                <Button size="sm" className="h-9" onClick={agregarTrabajador}>
+                  + Agregar
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {trabajadores.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No hay trabajadores registrados.
+                  </p>
+                )}
+                {trabajadores.map((nombre) => (
+                  <div
+                    key={nombre}
+                    className="flex items-center justify-between rounded-lg border p-2 text-sm"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-600 text-xs font-bold text-white">
+                        {nombre[0]}
+                      </span>
+                      {nombre}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-red-500 hover:text-red-600"
+                      onClick={() => quitarTrabajador(nombre)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : vista === "exportar" ? (
+            <div className="max-w-md animate-fade-up rounded-xl border bg-card p-4 shadow-sm card-lift">
+              <h3 className="mb-1 text-base font-bold">Exportar reporte</h3>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Elige un día (lista a la izquierda, últimos {DIAS_A_CONSERVAR} días).
+                Las ediciones que hagas en &quot;Reporte del día&quot; se reflejan
+                automáticamente la próxima vez que exportes.
+              </p>
+              {/* Aviso importante: descargar y guardar en la PC */}
+              <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-200">
+                <Download className="mt-0.5 h-4 w-4 shrink-0 animate-bounce" />
+                <span>
+                  <b>No olvides guardar los reportes en tu PC.</b> Los datos se
+                  conservan solo los últimos {DIAS_A_CONSERVAR} días; después se
+                  borran automáticamente. Descarga el Excel y guárdalo en una
+                  carpeta segura.
+                </span>
+              </div>
+              {!selectedDia ? (
+                <p className="text-xs text-muted-foreground">
+                  Selecciona un día en la barra lateral.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="text-xs">
+                    Día: <b>{selectedDia}</b>
+                  </div>
+
+                  {/* Por turno (3 islas) */}
+                  <div className="space-y-2 border-t pt-3">
+                    <h4 className="text-xs font-bold text-muted-foreground">
+                      POR TURNO (3 ISLAS)
+                    </h4>
+                    {turnosListos.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Aún no hay ningún turno completo (las 3 islas de un
+                        turno deben haber finalizado) para exportar.
+                      </p>
+                    ) : (
+                      <>
+                        <Select
+                          value={exportTurno}
+                          onValueChange={(v) => setExportTurno((v as TurnoId) ?? turnosListos[0])}
+                        >
+                          <SelectTrigger className="h-9 w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {TURNOS.filter((t) => turnosListos.includes(t.id)).map(
+                              (t) => (
+                                <SelectItem key={t.id} value={t.id}>
+                                  {t.label}
+                                </SelectItem>
+                              )
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          className="w-full"
+                          onClick={descargarXlsx}
+                          disabled={exportando || !turnosListos.includes(exportTurno)}
+                        >
+                          <Download className="mr-1 h-4 w-4" />
+                          {exportando ? "Generando…" : "Descargar Excel del turno (.xlsx)"}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Por turno e isla individual */}
+                  <div className="space-y-2 border-t pt-3">
+                    <h4 className="text-xs font-bold text-muted-foreground">
+                      POR ISLA INDIVIDUAL
+                    </h4>
+                    {turnosConIsla.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Aún ninguna isla finalizó un turno este día.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Select
+                            value={exportTurnoIsla}
+                            onValueChange={(v) =>
+                              setExportTurnoIsla((v as TurnoId) ?? turnosConIsla[0])
+                            }
+                          >
+                            <SelectTrigger className="h-9 w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TURNOS.filter((t) => turnosConIsla.includes(t.id)).map(
+                                (t) => (
+                                  <SelectItem key={t.id} value={t.id}>
+                                    {t.label}
+                                  </SelectItem>
+                                )
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={exportIslaId ?? ""}
+                            onValueChange={(v) => setExportIslaId(v)}
+                          >
+                            <SelectTrigger className="h-9 w-full">
+                              <SelectValue placeholder="Isla" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ISLAS.filter((i) => islasCerradasTurnoIsla.includes(i.id)).map(
+                                (i) => (
+                                  <SelectItem key={i.id} value={i.id}>
+                                    {i.nombre}
+                                  </SelectItem>
+                                )
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          className="w-full"
+                          onClick={descargarXlsxIsla}
+                          disabled={exportandoIsla || !exportIslaId}
+                        >
+                          <Download className="mr-1 h-4 w-4" />
+                          {exportandoIsla ? "Generando…" : "Descargar Excel de la isla (.xlsx)"}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="border-t pt-3">
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      Reporte general del día completo (plantilla &quot;madre&quot;):
+                      ventas, clientes, vales, descuentos y formas de pago de
+                      todos los turnos.
+                    </p>
+                    <Button
+                      variant="secondary"
+                      className="w-full"
+                      onClick={descargarGeneral}
+                      disabled={exportandoGeneral}
+                    >
+                      <Download className="mr-1 h-4 w-4" />
+                      {exportandoGeneral ? "Generando…" : "Descargar reporte general (.xlsx)"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            // vista === "config"
+            <div className="max-w-md rounded-xl border bg-card p-4 shadow-sm">
+              <h3 className="mb-1 flex items-center gap-2 text-base font-bold">
+                <Settings className="h-4 w-4" /> Configuraciones
+              </h3>
+              {!configUnlocked ? (
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    Sección restringida. Ingresa la contraseña de
+                    configuraciones para continuar.
+                  </p>
+                  <Input
+                    type="password"
+                    placeholder="Contraseña"
+                    value={configPass}
+                    onChange={(e) => setConfigPass(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      if (configPass === CONFIG_PASSWORD) setConfigUnlocked(true);
+                      else toast.error("Contraseña incorrecta");
+                    }}
+                    className="h-9"
+                  />
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      if (configPass === CONFIG_PASSWORD) setConfigUnlocked(true);
+                      else toast.error("Contraseña incorrecta");
+                    }}
+                  >
+                    Entrar
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Copias de seguridad */}
+                  <div className="rounded-lg border border-sky-300/60 bg-sky-50 p-3 dark:border-sky-500/30 dark:bg-sky-950/20">
+                    <h4 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-sky-700 dark:text-sky-300">
+                      <DatabaseBackup className="h-4 w-4" /> Copias de seguridad
+                    </h4>
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      Instantáneas de todas las sesiones (incluidos los
+                      odómetros) y la configuración. Se crea una automáticamente
+                      al completarse cada turno (3 islas) y puedes crear una
+                      manual. Se conservan los últimos {DIAS_BACKUP} días.
+                      <br />
+                      <span className="text-[11px]">
+                        Para recuperar: usa &quot;Resetear base de datos&quot;
+                        (no borra las copias) y luego restaura un punto seguro.
+                      </span>
+                    </p>
+                    <Button
+                      size="sm"
+                      className="mb-3 w-full"
+                      onClick={backupManual}
+                      disabled={creandoBackup}
+                    >
+                      <Save className="mr-1 h-4 w-4" />
+                      {creandoBackup ? "Creando…" : "Crear copia ahora"}
+                    </Button>
+                    {backups.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Aún no hay copias de seguridad.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {backups.map((b) => (
+                          <div
+                            key={b.id}
+                            className="animate-fade-up rounded-lg border bg-card p-2 text-xs card-lift"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <div className="font-semibold">
+                                  📅 {b.dia}
+                                  {b.nota && (
+                                    <span className="ml-1.5 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:text-sky-300">
+                                      {b.nota}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  {new Date(b.createdAt).toLocaleString("es-PE")} ·{" "}
+                                  {b.sesiones.length} sesiones
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2"
+                                  onClick={() => descargarBackup(b)}
+                                  title="Descargar copia (.json)"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-7 px-2"
+                                  onClick={() => setBackupARestaurar(b)}
+                                  disabled={restaurandoId === b.id}
+                                  title="Restaurar esta copia"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-red-500 hover:text-red-600"
+                                  onClick={() => eliminarBackup(b.id)}
+                                  title="Eliminar copia"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-red-300 bg-red-50 p-3 dark:bg-red-950/30">
+                    <h4 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-red-600">
+                      <AlertTriangle className="h-4 w-4" /> Zona de pruebas
+                    </h4>
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      Borra TODOS los turnos y reportes guardados (Supabase y
+                      este dispositivo). Útil para probar el sistema desde
+                      cero. Los precios y la lista de trabajadores NO se
+                      borran.
+                    </p>
+                    <Button
+                      variant="destructive"
+                      className="w-full"
+                      onClick={() => setConfirmandoReset(true)}
+                    >
+                      <Trash2 className="mr-1 h-4 w-4" />
+                      Resetear base de datos
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </main>
+      </div>
+
+      <Dialog
+        open={!!backupARestaurar}
+        onOpenChange={(o) => !o && setBackupARestaurar(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Restaurar esta copia de seguridad?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Se reescribirán las sesiones (odómetros, pagos, etc.) y la
+            configuración con los datos de la copia del{" "}
+            <b>{backupARestaurar?.dia}</b> (
+            {backupARestaurar
+              ? new Date(backupARestaurar.createdAt).toLocaleString("es-PE")
+              : ""}
+            ). Los turnos que existan se sobrescriben con los de la copia.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBackupARestaurar(null)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmarRestaurar}
+              disabled={restaurandoId === backupARestaurar?.id}
+            >
+              {restaurandoId === backupARestaurar?.id
+                ? "Restaurando…"
+                : "Sí, restaurar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmandoReset} onOpenChange={setConfirmandoReset}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Borrar todos los turnos y reportes?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Esta acción no se puede deshacer. Se borrarán todas las sesiones
+            (turnos activos y días ya cerrados) de Supabase y de este
+            dispositivo.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmandoReset(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={resetBaseDatos} disabled={reseteando}>
+              {reseteando ? "Borrando…" : "Sí, borrar todo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function PreciosEditor({
+  precios,
+  onChange,
+}: {
+  precios: import("@/lib/types").Precios;
+  onChange: (k: PrecioKey, v: number) => void;
+}) {
+  const combustibles: PrecioKey[] = ["bio", "regular", "premium", "glp"];
+  const balones: PrecioKey[] = ["gasfull", "zetagas"];
+  const label = (k: PrecioKey) =>
+    (PRODUCTOS as Record<string, string>)[k] ??
+    (BALONES as Record<string, string>)[k] ??
+    k;
+
+  return (
+    <Dialog>
+      <DialogTrigger
+        render={
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 bg-amber-500 text-black hover:bg-amber-400"
+          >
+            <Tag className="mr-1 h-4 w-4" /> Precios
+          </Button>
+        }
+      />
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Precios del sistema</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          Los cambios se aplican en todo el sistema (turnos y reportes) en tiempo
+          real.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <h4 className="mb-1 text-xs font-bold text-muted-foreground">
+              COMBUSTIBLES (por galón)
+            </h4>
+            <div className="grid grid-cols-2 gap-2">
+              {combustibles.map((k) => (
+                <div key={k} className="space-y-1">
+                  <Label className="text-xs">{label(k)}</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    className="h-9"
+                    value={precios[k] || ""}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onChange={(e) => onChange(k, Number(e.target.value))}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h4 className="mb-1 text-xs font-bold text-muted-foreground">
+              BALONES DE GAS (por unidad)
+            </h4>
+            <div className="grid grid-cols-2 gap-2">
+              {balones.map((k) => (
+                <div key={k} className="space-y-1">
+                  <Label className="text-xs">{label(k)}</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    className="h-9"
+                    value={precios[k] || ""}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onChange={(e) => onChange(k, Number(e.target.value))}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SideNav({
+  activo,
+  onClick,
+  icon,
+  label,
+}: {
+  activo: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "group relative flex w-full items-center gap-2 overflow-hidden rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+        activo
+          ? "bg-primary text-primary-foreground shadow-sm"
+          : "text-foreground hover:translate-x-0.5 hover:bg-accent"
+      )}
+    >
+      {/* Indicador lateral animado del ítem activo */}
+      <span
+        className={cn(
+          "absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-amber-400 transition-all duration-300",
+          activo ? "opacity-100" : "opacity-0 -translate-x-1"
+        )}
+      />
+      <span className="transition-transform duration-200 group-hover:scale-110">
+        {icon}
+      </span>
+      {label}
+    </button>
+  );
+}

@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GrifoSys v2
 
-## Getting Started
+Sistema de gestión para estación de servicios (grifo). Reescritura limpia de GrifoSys con **Supabase** (en lugar de Firebase), mismo dominio y lógica de negocio.
 
-First, run the development server:
+Stack: Next.js 16 (App Router) · TypeScript · Tailwind v4 · shadcn (Base UI) · Zustand · Supabase (Postgres + Realtime) · exceljs.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Puesta en marcha
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. **Crear proyecto en Supabase** → https://supabase.com
+2. **Credenciales**: Project Settings → API. Copia `Project URL` y `anon public` key a `.env.local`:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=https://TU-PROYECTO.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=tu-anon-key
+   ```
+3. **Crear las tablas**: en el Dashboard → SQL Editor → New query, pega el contenido de
+   [`supabase/schema.sql`](supabase/schema.sql) y pulsa **RUN**. Crea las tablas
+   `sesiones` y `config`, los índices, Realtime y las políticas RLS.
+4. `npm install`
+5. `npm run dev` → http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Sin credenciales, la app funciona en **modo local** (localStorage) sin sincronización en la nube.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Accesos
 
-## Learn More
+- **Trabajador**: elige su nombre y arma su turno (isla + turno).
+- **Admin**: contraseña (`NEXT_PUBLIC_ADMIN_PASSWORD`, por defecto `admin123`).
+- **Configuraciones** (reset de BD, pruebas): segunda contraseña
+  (`NEXT_PUBLIC_CONFIG_PASSWORD`, por defecto `angelccasa284`).
 
-To learn more about Next.js, take a look at the following resources:
+## Scripts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `npm run dev` — desarrollo
+- `npm run build` — build de producción
+- `npm test` — pruebas unitarias del cuadre (vitest)
+- `npm run lint` — eslint
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Arquitectura
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `src/lib/` — dominio puro (sin backend): `types`, `config`, `calc` (cuadre,
+  día operativo 6am–6am, gating de turnos por cascada, reporte del día),
+  `registro-columns`, `store` (Zustand + persist).
+- `src/lib/supabase.ts` + `src/lib/db.ts` — única capa que habla con Supabase.
+- `src/components/supabase-sync.tsx` — sincronización en vivo (Realtime).
+- `src/app/` — `/` login, `/setup` selección de turno, `/dashboard` turno del
+  trabajador, `/admin` panel, `/api/export-*` exportación a Excel.
+- `supabase/schema.sql` — esquema de la base de datos.
