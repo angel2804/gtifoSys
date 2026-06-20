@@ -311,6 +311,30 @@ describe("calcularReporteDia", () => {
     expect(rep.ventaTotal).toBeCloseTo(25 * PRECIOS_DEFAULT.regular);
   });
 
+  it("usa salida(noche) - entrada(mañana) aunque mañana y tarde no pongan su salida", () => {
+    // Mañana arranca en 100 pero olvidan la salida; tarde no la pone tampoco;
+    // solo noche cierra en 400. El total del día debe ser 400 - 100 = 300.
+    const manana = sesionBase({
+      id: "a",
+      turno: "manana",
+      odometros: { ...sesionBase().odometros, i1_reg1: { entrada: 100, salida: 0 } },
+    });
+    const tarde = sesionBase({
+      id: "b",
+      turno: "tarde",
+      odometros: { ...sesionBase().odometros, i1_reg1: { entrada: 0, salida: 0 } },
+    });
+    const noche = sesionBase({
+      id: "c",
+      turno: "noche",
+      odometros: { ...sesionBase().odometros, i1_reg1: { entrada: 0, salida: 400 } },
+    });
+    const rep = calcularReporteDia([manana, tarde, noche], "2026-01-01", PRECIOS_DEFAULT);
+    const reg = rep.porProducto.find((p) => p.producto === "regular");
+    expect(reg?.galones).toBeCloseTo(300);
+    expect(rep.ventaTotal).toBeCloseTo(300 * PRECIOS_DEFAULT.regular);
+  });
+
   it("completo es false si el día no tiene sesiones", () => {
     const rep = calcularReporteDia([], "2026-01-01", PRECIOS_DEFAULT);
     expect(rep.completo).toBe(false);

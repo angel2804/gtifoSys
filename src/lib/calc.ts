@@ -319,41 +319,67 @@ export function calcularReporteDia(
     }
   }
 
-  // Cuadre del día = suma de los cuadres de cada turno
   const cuadres = delDia.map((s) => calcularCuadre(s, precios));
   const sum = (f: (c: Cuadre) => number) => cuadres.reduce((a, c) => a + f(c), 0);
 
-  // por producto (suma de galones y ventas por producto entre turnos)
+  // Galones y venta por producto: se agregan desde el odómetro CONTINUO del día
+  // (inicio = entrada del primer turno, final = salida del último turno), NO
+  // sumando turno por turno. Así, aunque mañana y tarde olviden poner su salida,
+  // el total del día sale de salida(noche) - entrada(mañana) sin duplicarse.
   const porProductoMap = new Map<ProductoId, FilaProducto>();
-  for (const c of cuadres) {
-    for (const fp of c.porProducto) {
-      const ex = porProductoMap.get(fp.producto);
-      if (ex) {
-        ex.galones += fp.galones;
-        ex.venta += fp.venta;
-        ex.precio = fp.precio;
-      } else {
-        porProductoMap.set(fp.producto, { ...fp });
-      }
+  for (const o of odometros) {
+    const ex = porProductoMap.get(o.producto);
+    if (ex) {
+      ex.galones += o.galones;
+      ex.venta += o.soles;
+      ex.precio = o.precio;
+    } else {
+      porProductoMap.set(o.producto, {
+        producto: o.producto,
+        galones: o.galones,
+        precio: o.precio,
+        venta: o.soles,
+      });
     }
   }
+  const porProducto = Array.from(porProductoMap.values());
+  const ventaTotal = porProducto.reduce((a, f) => a + f.venta, 0);
 
-  const ventaTotal = sum((c) => c.ventaTotal);
-  const efectivoAEntregar = sum((c) => c.efectivoAEntregar);
+  // Deducciones, electrónico, gastos, etc. SÍ se suman por turno: son
+  // transacciones registradas en cada turno, no lecturas de odómetro.
+  const totalCreditos = sum((c) => c.totalCreditos);
+  const totalPromociones = sum((c) => c.totalPromociones);
+  const totalDescuentos = sum((c) => c.totalDescuentos);
+  const totalElectronico = sum((c) => c.totalElectronico);
+  const totalGastos = sum((c) => c.totalGastos);
+  const totalAdelantos = sum((c) => c.totalAdelantos);
+  const totalBalones = sum((c) => c.totalBalones);
+
+  // Efectivo a entregar del día, recomputado con la venta del odómetro continuo
+  // (mantiene la consistencia con el reporte general).
+  const efectivoAEntregar =
+    ventaTotal -
+    totalCreditos -
+    totalPromociones -
+    totalDescuentos -
+    totalElectronico -
+    totalGastos +
+    totalAdelantos +
+    totalBalones;
   const totalEntregado = sum((c) => c.totalEntregado);
 
   return {
     dia,
     odometros,
-    porProducto: Array.from(porProductoMap.values()),
+    porProducto,
     ventaTotal,
-    totalCreditos: sum((c) => c.totalCreditos),
-    totalPromociones: sum((c) => c.totalPromociones),
-    totalDescuentos: sum((c) => c.totalDescuentos),
-    totalElectronico: sum((c) => c.totalElectronico),
-    totalGastos: sum((c) => c.totalGastos),
-    totalAdelantos: sum((c) => c.totalAdelantos),
-    totalBalones: sum((c) => c.totalBalones),
+    totalCreditos,
+    totalPromociones,
+    totalDescuentos,
+    totalElectronico,
+    totalGastos,
+    totalAdelantos,
+    totalBalones,
     efectivoAEntregar,
     totalEntregado,
     saldoPendiente: efectivoAEntregar - totalEntregado,
