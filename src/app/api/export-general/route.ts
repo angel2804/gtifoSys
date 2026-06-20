@@ -22,9 +22,11 @@ function fechaTitulo(dia: string): string {
   return `VENTA. DEL DIA ${d} ${MESES[m - 1]} ${y}`;
 }
 
-function soles(n: number): string {
-  return "S/ " + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+// Formato de moneda nativo de Excel: muestra "S/ 1,234.56", "-S/ 1,234.56"
+// para negativos y "S/ -" para el cero. Al guardar el valor como NÚMERO con
+// este numFmt (en lugar de un string "S/ ..."), Excel ya no marca el aviso de
+// "número almacenado como texto".
+const SOLES_FMT = '"S/ "#,##0.00;-"S/ "#,##0.00;"S/ -"';
 
 const EPS = 0.01;
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -57,6 +59,13 @@ export async function POST(req: NextRequest) {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.readFile(templatePath);
     const ws = wb.worksheets[0];
+
+    // Escribe un monto como número con formato de moneda (ver SOLES_FMT).
+    const setSoles = (addr: string, n: number) => {
+      const c = ws.getCell(addr);
+      c.value = n;
+      c.numFmt = SOLES_FMT;
+    };
 
     // La plantilla original trae datos de muestra (clientes, vales, montos
     // reales de un día anterior) en TODAS las filas de Descuentos (7-18) y
@@ -113,7 +122,7 @@ export async function POST(req: NextRequest) {
     // --- Encabezado ---
     ws.getCell("B3").value = fechaTitulo(dia);
     for (const { producto, col } of PRODUCTO_COLS) {
-      ws.getCell(`${col}1`).value = soles(precios[producto] ?? 0);
+      setSoles(`${col}1`, precios[producto] ?? 0);
       ws.getCell(`${col}2`).value = galonesPorProducto(producto);
     }
     ws.getCell("M2").value = rep.totalAdelantos || null;
@@ -152,8 +161,9 @@ export async function POST(req: NextRequest) {
     }
 
     // --- Totales de créditos por producto (filas 38 y 40 originales) ---
+    // El total de galones en crédito incluye además los de promociones.
     for (const { producto, col } of PRODUCTO_COLS) {
-      const gl = galonesCreditoPorProducto(producto);
+      const gl = galonesCreditoPorProducto(producto) + galonesPromoPorProducto(producto);
       ws.getCell(`${col}${mapRow(38)}`).value = gl;
       ws.getCell(`${col}${mapRow(40)}`).value = gl === 0 ? "-" : gl;
     }
@@ -172,15 +182,15 @@ export async function POST(req: NextRequest) {
       const precioNormal = precios[producto] ?? 0;
       const solesToten = glToten * precioNormal;
       ws.getCell(`${col}${fila}`).value = glToten;
-      ws.getCell(`${puCol}${fila}`).value = soles(precioNormal);
-      ws.getCell(`L${fila}`).value = r2(solesToten);
+      setSoles(`${puCol}${fila}`, precioNormal);
+      setSoles(`L${fila}`, r2(solesToten));
       totalVentaToten += solesToten;
     });
     totalVentaToten = r2(totalVentaToten);
-    ws.getCell(`L${mapRow(47)}`).value = totalVentaToten;
+    setSoles(`L${mapRow(47)}`, totalVentaToten);
 
     // --- Balones de gas (Full Gas | Zeta Gas) ---
-    ws.getCell(`L${mapRow(49)}`).value = rep.totalBalones > 0 ? r2(rep.totalBalones) : "S/ -";
+    setSoles(`L${mapRow(49)}`, r2(rep.totalBalones));
 
     // Sin datos en el sistema: se deja vacío (no se inventan valores)
     ws.getCell(`L${mapRow(50)}`).value = null;
@@ -193,40 +203,63 @@ export async function POST(req: NextRequest) {
 
     // --- TOTAL = venta toten + balones ---
     const totalGeneral = r2(totalVentaToten + rep.totalBalones);
-    ws.getCell(`L${mapRow(54)}`).value = soles(totalGeneral);
+    setSoles(`L${mapRow(54)}`, totalGeneral);
 
     // --- Deducciones ---
-    ws.getCell(`L${mapRow(56)}`).value = r2(rep.totalDescuentos);
-    ws.getCell(`L${mapRow(57)}`).value = r2(rep.totalGastos);
+    setSoles(`L${mapRow(56)}`, r2(rep.totalDescuentos));
+    setSoles(`L${mapRow(57)}`, r2(rep.totalGastos));
     const visas = r2(sumaPagos("visa"));
     const yapes = r2(sumaPagos("yape"));
     const transferencias = r2(sumaPagos("transferencia"));
-    ws.getCell(`L${mapRow(58)}`).value = visas;
-    ws.getCell(`L${mapRow(59)}`).value = yapes;
-    ws.getCell(`L${mapRow(60)}`).value = transferencias;
+    setSoles(`L${mapRow(58)}`, visas);
+    setSoles(`L${mapRow(59)}`, yapes);
+    setSoles(`L${mapRow(60)}`, transferencias);
     const totalDeducciones = r2(
       rep.totalDescuentos + rep.totalGastos + visas + yapes + transferencias
     );
-    ws.getCell(`L${mapRow(61)}`).value = totalDeducciones;
+    setSoles(`L${mapRow(61)}`, totalDeducciones);
 
     // --- ENTREGAR: se usa el cálculo ya validado del sistema ---
     const entregar = r2(rep.efectivoAEntregar);
-    ws.getCell(`L${mapRow(62)}`).value = soles(entregar);
-    ws.getCell(`L${mapRow(63)}`).value = soles(r2(rep.totalEntregado));
+    setSoles(`L${mapRow(62)}`, entregar);
+    setSoles(`L${mapRow(63)}`, r2(rep.totalEntregado));
     const diferencia = r2(rep.totalEntregado - entregar);
-    ws.getCell(`L${mapRow(64)}`).value = diferencia;
+    setSoles(`L${mapRow(64)}`, diferencia);
     ws.getCell(`M${mapRow(64)}`).value =
       diferencia < -EPS ? "FALTA" : diferencia > EPS ? "SOBRA" : null;
 
     // --- Calibración: solo se reflejan los precios (lo único que existe en el sistema) ---
     for (const { producto, puCol } of PRODUCTO_COLS) {
-      ws.getCell(`${puCol}${mapRow(66)}`).value = soles(precios[producto] ?? 0);
+      setSoles(`${puCol}${mapRow(66)}`, precios[producto] ?? 0);
     }
     ws.getCell(`L${mapRow(66)}`).value = null;
 
     // --- Telemedición: no existe en el sistema, se deja vacío ---
     for (let row = 69; row <= 74; row++) {
       ws.getCell(`C${mapRow(row)}`).value = null;
+    }
+
+    // exceljs.duplicateRow descarta los rangos combinados (mergeCells) que
+    // quedan por debajo del punto de inserción. Al haber overflow, el "TOTAL"
+    // combinado A:C se rompía y se veía repetido 3 veces. Se vuelven a aplicar
+    // en su posición final.
+    if (extraDescuentos + extraCreditos + extraPromos > 0) {
+      const remerge = (desde: string, hasta: string) => {
+        try {
+          ws.unMergeCells(`${desde}:${hasta}`);
+        } catch {
+          /* no estaba combinado */
+        }
+        ws.mergeCells(`${desde}:${hasta}`);
+      };
+      remerge(`A${mapRow(61)}`, `C${mapRow(61)}`); // TOTAL deducciones
+      remerge(`B${mapRow(68)}`, `C${mapRow(68)}`); // TELEMEDICION
+      remerge(`E${mapRow(68)}`, `F${mapRow(68)}`);
+    }
+
+    // Altura uniforme de 14.5 para todas las filas con contenido.
+    for (let i = 1; i <= ws.rowCount; i++) {
+      ws.getRow(i).height = 14.5;
     }
 
     // ===== Validación final: el ENTREGAR del archivo debe coincidir con el
