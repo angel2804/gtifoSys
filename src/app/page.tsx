@@ -18,14 +18,25 @@ export default function LoginPage() {
   const setCurrentSesion = useStore((s) => s.setCurrentSesion);
   const sesiones = useStore((s) => s.sesiones);
   const trabajadores = useStore((s) => s.trabajadores);
+  const admins = useStore((s) => s.admins);
+  const logo = useStore((s) => s.logo);
 
   const [modo, setModo] = useState<Modo>("inicio");
   const [pass, setPass] = useState("");
+  // Admin seleccionado de la lista; "__master__" = entrar con contraseña maestra.
+  const [adminSel, setAdminSel] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
 
   function entrarAdmin() {
-    if (pass !== ADMIN_PASSWORD) {
+    // La contraseña maestra siempre funciona (respaldo). Si se eligió un admin
+    // de la lista, también vale su contraseña propia.
+    let ok = pass === ADMIN_PASSWORD;
+    if (!ok && adminSel && adminSel !== "__master__") {
+      const a = admins.find((x) => x.nombre === adminSel);
+      ok = !!a && pass === a.password;
+    }
+    if (!ok) {
       toast.error("Contraseña incorrecta");
       return;
     }
@@ -60,8 +71,13 @@ export default function LoginPage() {
       <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-6 duration-500">
         {/* Logo */}
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <div className="flex h-20 w-20 animate-float items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 shadow-lg shadow-orange-900/40 ring-1 ring-white/20">
-            <Fuel className="h-10 w-10 text-white" strokeWidth={2.2} />
+          <div className="flex h-20 w-20 animate-float items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 shadow-lg shadow-orange-900/40 ring-1 ring-white/20">
+            {logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logo} alt="Logo" className="h-full w-full object-contain" />
+            ) : (
+              <Fuel className="h-10 w-10 text-white" strokeWidth={2.2} />
+            )}
           </div>
           <div>
             <h1 className="text-gradient text-3xl font-extrabold tracking-tight">
@@ -118,30 +134,80 @@ export default function LoginPage() {
 
           {modo === "admin" && (
             <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-              <BackBtn onClick={() => setModo("inicio")} />
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-200">
-                  Contraseña de administrador
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                  <Input
-                    type="password"
-                    value={pass}
-                    autoFocus
-                    onChange={(e) => setPass(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && entrarAdmin()}
-                    placeholder="••••••••"
-                    className="border-white/10 bg-white/5 pl-9 text-white placeholder:text-slate-500"
-                  />
+              <BackBtn
+                onClick={() => {
+                  if (adminSel) {
+                    setAdminSel(null);
+                    setPass("");
+                  } else {
+                    setModo("inicio");
+                  }
+                }}
+              />
+
+              {admins.length > 0 && !adminSel ? (
+                // Paso 1: elegir administrador de la lista
+                <div className="space-y-3">
+                  <label className="text-sm font-medium text-slate-200">
+                    Selecciona tu usuario
+                  </label>
+                  <div className="grid gap-2">
+                    {admins.map((a) => (
+                      <button
+                        key={a.id}
+                        onClick={() => {
+                          setAdminSel(a.nombre);
+                          setPass("");
+                        }}
+                        className="group flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-left transition-all hover:scale-[1.02] hover:border-amber-400/50 hover:bg-white/10"
+                      >
+                        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 font-bold text-white">
+                          {a.nombre[0]?.toUpperCase()}
+                        </span>
+                        <span className="font-medium text-white">{a.nombre}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setAdminSel("__master__");
+                      setPass("");
+                    }}
+                    className="text-xs text-slate-400 underline-offset-2 transition-colors hover:text-white hover:underline"
+                  >
+                    Usar contraseña maestra
+                  </button>
                 </div>
-              </div>
-              <Button
-                className="h-11 w-full bg-gradient-to-r from-amber-500 to-orange-600 font-semibold text-white hover:from-amber-400 hover:to-orange-500"
-                onClick={entrarAdmin}
-              >
-                Entrar
-              </Button>
+              ) : (
+                // Paso 2: contraseña (de un admin o la maestra)
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-200">
+                      {adminSel && adminSel !== "__master__"
+                        ? `Contraseña de ${adminSel}`
+                        : "Contraseña de administrador"}
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                      <Input
+                        type="password"
+                        value={pass}
+                        autoFocus
+                        onChange={(e) => setPass(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && entrarAdmin()}
+                        placeholder="••••••••"
+                        className="border-white/10 bg-white/5 pl-9 text-white placeholder:text-slate-500"
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    className="h-11 w-full bg-gradient-to-r from-amber-500 to-orange-600 font-semibold text-white hover:from-amber-400 hover:to-orange-500"
+                    onClick={entrarAdmin}
+                  >
+                    Entrar
+                  </Button>
+                </>
+              )}
             </div>
           )}
 

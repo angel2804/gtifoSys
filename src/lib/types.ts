@@ -13,6 +13,14 @@ export type BalonTipo = "gasfull" | "zetagas";
 export type PrecioKey = ProductoId | BalonTipo;
 export type Precios = Record<PrecioKey, number>;
 
+// Administrador con nombre y contraseña, gestionado por el desarrollador en
+// Configuraciones. Aparece en la lista de login de admin.
+export interface Admin {
+  id: string;
+  nombre: string;
+  password: string;
+}
+
 export interface Manguera {
   id: string;
   label: string;

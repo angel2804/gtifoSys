@@ -8,7 +8,7 @@
 //   tabla `config`:   key text pk, value jsonb  ('precios' | 'trabajadores')
 import { getSupabase } from "./supabase";
 import { diaOperativo, diaOperativoActual, turnoCompleto } from "./calc";
-import type { Precios, Sesion, TurnoId } from "./types";
+import type { Admin, Precios, Sesion, TurnoId } from "./types";
 
 export const dbHabilitado = () => getSupabase() != null;
 
@@ -185,6 +185,12 @@ export const setTrabajadoresRemoto = (nombres: string[]) =>
 // Lista de clientes (autocompletado de créditos/descuentos/adelantos).
 export const setClientesRemoto = (nombres: string[]) =>
   setConfig("clientes", { nombres });
+// Administradores (nombre + contraseña), gestionados por el desarrollador.
+export const setAdminsRemoto = (admins: Admin[]) =>
+  setConfig("admins", { admins });
+// Logo de la empresa (data URL); null = volver al ícono por defecto.
+export const setLogoRemoto = (dataUrl: string | null) =>
+  setConfig("logo", { dataUrl });
 
 // ===== Backups (copias de seguridad) =====
 // Cada backup es una instantánea de TODAS las sesiones + la config en un

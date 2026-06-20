@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
   Adelanto,
+  Admin,
   Balon,
   Credito,
   Descuento,
@@ -46,11 +47,15 @@ interface StoreState {
   precios: Precios; // precios globales (sincronizados con Firestore config/precios)
   trabajadores: string[]; // sincronizados con Firestore config/trabajadores
   clientes: string[]; // nombres de clientes (créditos/descuentos/adelantos), sincronizados con config/clientes
+  admins: Admin[]; // administradores con nombre+contraseña, sincronizados con config/admins
+  logo: string | null; // logo de la empresa (data URL), sincronizado con config/logo
 
   setPrecios: (p: Precios) => void;
   setPrecio: (k: PrecioKey, v: number) => void;
   setTrabajadores: (t: string[]) => void;
   setClientes: (c: string[]) => void;
+  setAdmins: (a: Admin[]) => void;
+  setLogo: (url: string | null) => void;
   // Aprende uno o más nombres de cliente: los agrega a la lista si no existen
   // (sin distinguir mayúsculas/acentos). Devuelve true si la lista cambió.
   aprenderClientes: (nombres: (string | undefined)[]) => boolean;
@@ -165,11 +170,15 @@ export const useStore = create<StoreState>()(
       precios: { ...PRECIOS_DEFAULT },
       trabajadores: [...TRABAJADORES_DEFAULT],
       clientes: [],
+      admins: [],
+      logo: null,
 
       setPrecios: (p) => set({ precios: p }),
       setPrecio: (k, v) => set((s) => ({ precios: { ...s.precios, [k]: v } })),
       setTrabajadores: (t) => set({ trabajadores: t }),
       setClientes: (c) => set({ clientes: c }),
+      setAdmins: (a) => set({ admins: a }),
+      setLogo: (url) => set({ logo: url }),
       aprenderClientes: (nombres) => {
         const actuales = get().clientes;
         const siguientes = aprenderClientes(actuales, nombres);
@@ -453,6 +462,8 @@ export const useStore = create<StoreState>()(
         if (!state.precios) state.precios = { ...PRECIOS_DEFAULT };
         if (!state.trabajadores) state.trabajadores = [...TRABAJADORES_DEFAULT];
         if (!state.clientes) state.clientes = [];
+        if (!state.admins) state.admins = [];
+        if (state.logo === undefined) state.logo = null;
         return state;
       },
     }

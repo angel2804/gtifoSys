@@ -22,6 +22,8 @@ import {
   DIAS_BACKUP,
   fetchBackups,
   restaurarBackup,
+  setAdminsRemoto,
+  setLogoRemoto,
   setPreciosRemoto,
   setTrabajadoresRemoto,
   subscribeSesiones,
@@ -47,7 +49,7 @@ import {
   turnosCompletosDeDia,
   turnosConAlgunaIslaCerrada,
 } from "@/lib/calc";
-import type { PrecioKey, Sesion, TurnoId } from "@/lib/types";
+import type { Admin, PrecioKey, Sesion, TurnoId } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { SesionVista } from "@/components/grifo/sesion-vista";
 import { ReporteDiaVista } from "@/components/grifo/reporte-dia-vista";
@@ -106,6 +108,10 @@ export default function AdminPage() {
   const setPrecio = useStore((s) => s.setPrecio);
   const trabajadores = useStore((s) => s.trabajadores);
   const setTrabajadoresStore = useStore((s) => s.setTrabajadores);
+  const logo = useStore((s) => s.logo);
+  const setLogo = useStore((s) => s.setLogo);
+  const admins = useStore((s) => s.admins);
+  const setAdmins = useStore((s) => s.setAdmins);
 
   // Una sola fuente acotada y en vivo: los últimos 60 días operativos.
   // Incluye tanto los turnos activos como los días recientes para reporte/
@@ -127,6 +133,8 @@ export default function AdminPage() {
   const resetSesiones = useStore((s) => s.resetSesiones);
   const [configPass, setConfigPass] = useState("");
   const [configUnlocked, setConfigUnlocked] = useState(false);
+  const [nuevoAdminNombre, setNuevoAdminNombre] = useState("");
+  const [nuevoAdminPass, setNuevoAdminPass] = useState("");
   const [confirmandoReset, setConfirmandoReset] = useState(false);
   const [reseteando, setReseteando] = useState(false);
   // ---- Backups (copias de seguridad) ----
@@ -253,6 +261,58 @@ export default function AdminPage() {
   }
   function quitarTrabajador(nombre: string) {
     persistTrabajadores(trabajadores.filter((t) => t !== nombre));
+  }
+
+  // ---- Gestión de administradores (sección desarrollador) ----
+  function persistAdmins(lista: Admin[]) {
+    setAdmins(lista);
+    setAdminsRemoto(lista).catch(() => {});
+  }
+  function agregarAdmin() {
+    const nombre = nuevoAdminNombre.trim();
+    const pass = nuevoAdminPass.trim();
+    if (!nombre || !pass) {
+      toast.error("Nombre y contraseña son obligatorios");
+      return;
+    }
+    if (admins.some((a) => a.nombre.toLowerCase() === nombre.toLowerCase())) {
+      toast.error("Ya existe un administrador con ese nombre");
+      return;
+    }
+    persistAdmins([...admins, { id: uid(), nombre, password: pass }]);
+    setNuevoAdminNombre("");
+    setNuevoAdminPass("");
+    toast.success("Administrador creado");
+  }
+  function quitarAdmin(id: string) {
+    persistAdmins(admins.filter((a) => a.id !== id));
+  }
+
+  // ---- Logo de la empresa ----
+  function onSubirLogo(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("El archivo debe ser una imagen");
+      return;
+    }
+    if (file.size > 500 * 1024) {
+      toast.error("La imagen es muy pesada (máx. 500 KB)");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result);
+      setLogo(dataUrl);
+      setLogoRemoto(dataUrl).catch(() => {});
+      toast.success("Logo actualizado");
+    };
+    reader.onerror = () => toast.error("No se pudo leer la imagen");
+    reader.readAsDataURL(file);
+  }
+  function quitarLogo() {
+    setLogo(null);
+    setLogoRemoto(null).catch(() => {});
+    toast.success("Logo restablecido");
   }
 
   // ---- Exportar reporte a Excel (plantilla por isla) ----
@@ -471,8 +531,13 @@ export default function AdminPage() {
       {/* Header */}
       <header className="gs-topbar flex items-center justify-between border-b border-white/10 px-4 py-2.5 text-white">
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 animate-pulse-ring">
-            <Fuel className="h-5 w-5 text-white" />
+          <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 animate-pulse-ring">
+            {logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logo} alt="Logo" className="h-full w-full object-contain" />
+            ) : (
+              <Fuel className="h-5 w-5 text-white" />
+            )}
           </span>
           <span className="text-lg font-bold">GrifoSys</span>
           <span className="rounded bg-white/10 px-2 py-0.5 text-xs font-medium">
@@ -986,6 +1051,115 @@ export default function AdminPage() {
                     )}
                   </div>
 
+                  {/* Administradores */}
+                  <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-950/20">
+                    <h4 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-amber-700 dark:text-amber-300">
+                      <Users className="h-4 w-4" /> Administradores
+                    </h4>
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      Crea administradores con su nombre y contraseña. Aparecerán
+                      en la pantalla de login (opción Administrador) para que
+                      ingresen con la contraseña que les asignes aquí.
+                    </p>
+                    <div className="mb-3 flex flex-col gap-2 sm:flex-row">
+                      <Input
+                        placeholder="Nombre"
+                        className="h-9"
+                        value={nuevoAdminNombre}
+                        onChange={(e) => setNuevoAdminNombre(e.target.value)}
+                      />
+                      <Input
+                        placeholder="Contraseña"
+                        className="h-9"
+                        value={nuevoAdminPass}
+                        onChange={(e) => setNuevoAdminPass(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && agregarAdmin()}
+                      />
+                      <Button size="sm" className="h-9 shrink-0" onClick={agregarAdmin}>
+                        Agregar
+                      </Button>
+                    </div>
+                    {admins.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Aún no hay administradores creados.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {admins.map((a) => (
+                          <div
+                            key={a.id}
+                            className="flex items-center justify-between gap-2 rounded-lg border bg-card p-2 text-sm"
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-xs font-bold text-white">
+                                {a.nombre[0]?.toUpperCase()}
+                              </span>
+                              <span className="font-medium">{a.nombre}</span>
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-red-500 hover:text-red-600"
+                              onClick={() => quitarAdmin(a.id)}
+                              title="Eliminar administrador"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Logo de la empresa */}
+                  <div className="rounded-lg border border-violet-300/60 bg-violet-50 p-3 dark:border-violet-500/30 dark:bg-violet-950/20">
+                    <h4 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-violet-700 dark:text-violet-300">
+                      <Tag className="h-4 w-4" /> Logo de la empresa
+                    </h4>
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      Reemplaza el ícono del login y del panel por el logo de la
+                      empresa. Imagen PNG/JPG de máx. 500 KB.
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-card">
+                        {logo ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={logo}
+                            alt="Logo actual"
+                            className="h-full w-full object-contain"
+                          />
+                        ) : (
+                          <Fuel className="h-7 w-7 text-amber-500" />
+                        )}
+                      </span>
+                      <div className="flex flex-col gap-2">
+                        <label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                          {logo ? "Cambiar logo" : "Subir logo"}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              onSubirLogo(e.target.files?.[0]);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                        {logo && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-9"
+                            onClick={quitarLogo}
+                          >
+                            Quitar logo
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="rounded-lg border border-red-300 bg-red-50 p-3 dark:bg-red-950/30">
                     <h4 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-red-600">
                       <AlertTriangle className="h-4 w-4" /> Zona de pruebas
@@ -1069,6 +1243,56 @@ export default function AdminPage() {
   );
 }
 
+// Input de precio con estado LOCAL: el valor solo se confirma (sube al store)
+// al salir del campo o presionar Enter, no en cada tecla. Así el admin puede
+// escribir "18" sin que el sistema se recargue/reinicie a mitad de la edición.
+function PrecioInput({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: (v: number) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [local, setLocal] = useState(value ? String(value) : "");
+  const [prevValue, setPrevValue] = useState(value);
+
+  // Mientras no se está editando, refleja el valor externo (ej. otro cambio).
+  // Ajuste de estado en render (patrón recomendado por React) en vez de effect.
+  if (value !== prevValue && !focused) {
+    setPrevValue(value);
+    setLocal(value ? String(value) : "");
+  }
+
+  const commit = () => {
+    const n = Number(local);
+    onCommit(Number.isFinite(n) && n > 0 ? n : 0);
+  };
+
+  return (
+    <Input
+      type="number"
+      step="0.01"
+      inputMode="decimal"
+      className="h-9"
+      value={local}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        setFocused(false);
+        commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          commit();
+          e.currentTarget.blur();
+        }
+      }}
+      onWheel={(e) => e.currentTarget.blur()}
+    />
+  );
+}
+
 function PreciosEditor({
   precios,
   onChange,
@@ -1113,13 +1337,9 @@ function PreciosEditor({
               {combustibles.map((k) => (
                 <div key={k} className="space-y-1">
                   <Label className="text-xs">{label(k)}</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    className="h-9"
-                    value={precios[k] || ""}
-                    onWheel={(e) => e.currentTarget.blur()}
-                    onChange={(e) => onChange(k, Number(e.target.value))}
+                  <PrecioInput
+                    value={precios[k] || 0}
+                    onCommit={(v) => onChange(k, v)}
                   />
                 </div>
               ))}
@@ -1133,13 +1353,9 @@ function PreciosEditor({
               {balones.map((k) => (
                 <div key={k} className="space-y-1">
                   <Label className="text-xs">{label(k)}</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    className="h-9"
-                    value={precios[k] || ""}
-                    onWheel={(e) => e.currentTarget.blur()}
-                    onChange={(e) => onChange(k, Number(e.target.value))}
+                  <PrecioInput
+                    value={precios[k] || 0}
+                    onCommit={(v) => onChange(k, v)}
                   />
                 </div>
               ))}

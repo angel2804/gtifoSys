@@ -13,7 +13,7 @@ import {
 } from "@/lib/db";
 import { aprenderClientes } from "@/lib/clientes";
 import { supabaseHabilitado } from "@/lib/supabase";
-import type { Precios, Sesion } from "@/lib/types";
+import type { Admin, Precios, Sesion } from "@/lib/types";
 
 // Sincroniza el store (localStorage) con Supabase:
 //  - al iniciar y en vivo: trae una VENTANA RECIENTE de sesiones (hoy y ayer)
@@ -28,6 +28,8 @@ export function SupabaseSync() {
   const setPrecios = useStore((s) => s.setPrecios);
   const setTrabajadores = useStore((s) => s.setTrabajadores);
   const setClientes = useStore((s) => s.setClientes);
+  const setAdmins = useStore((s) => s.setAdmins);
+  const setLogo = useStore((s) => s.setLogo);
 
   // Precios globales en vivo (config/precios)
   useEffect(() => {
@@ -42,6 +44,22 @@ export function SupabaseSync() {
       if (Array.isArray(v.nombres) && v.nombres.length) setTrabajadores(v.nombres);
     });
   }, [setTrabajadores]);
+
+  // Administradores en vivo (config/admins)
+  useEffect(() => {
+    if (!supabaseHabilitado) return;
+    return subscribeConfig<{ admins: Admin[] }>("admins", (v) => {
+      if (Array.isArray(v.admins)) setAdmins(v.admins);
+    });
+  }, [setAdmins]);
+
+  // Logo de la empresa en vivo (config/logo)
+  useEffect(() => {
+    if (!supabaseHabilitado) return;
+    return subscribeConfig<{ dataUrl: string | null }>("logo", (v) => {
+      setLogo(v.dataUrl ?? null);
+    });
+  }, [setLogo]);
 
   // Lista de clientes en vivo (config/clientes). Se UNE con la lista local en
   // vez de reemplazarla, para no perder clientes recién aprendidos en este
