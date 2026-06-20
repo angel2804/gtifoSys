@@ -25,6 +25,8 @@ import {
   TURNOS,
 } from "@/lib/config";
 import { calcularReporteDia, soles } from "@/lib/calc";
+import { clientesOrdenados } from "@/lib/clientes";
+import { useStore } from "@/lib/store";
 import type { Precios, ProductoId, Sesion, TurnoId } from "@/lib/types";
 import type { Col } from "./registro-fields";
 import { ReporteRegistroModal, type Grupo } from "./reporte-registro-modal";
@@ -111,6 +113,7 @@ export function ReporteDiaVista({
   const esGeneral = filtroTurno === "general";
 
   const precio = (p: ProductoId) => precios[p] ?? 0;
+  const sugClientes = clientesOrdenados(useStore((s) => s.clientes));
 
   // Sesiones del turno (o de todos los turnos si general), filtradas por isla
   const filtradas = delDia.filter(
@@ -219,7 +222,7 @@ export function ReporteDiaVista({
       total: rep.totalCreditos,
       grupos: grupos(
         "creditos",
-        (s) => colsCredito(productoOpts(s), precio) as unknown as Col<RowAny>[]
+        (s) => colsCredito(productoOpts(s), precio, sugClientes) as unknown as Col<RowAny>[]
       ),
       nuevo: nuevoRowAny((s) => nuevoCredito(productoOpts(s)[0]?.value ?? "bio")),
       validar: validarRowAny(validarCredito),
@@ -245,7 +248,7 @@ export function ReporteDiaVista({
       total: rep.totalDescuentos,
       grupos: grupos(
         "descuentos",
-        (s) => colsDescuento(productoOpts(s), precio) as unknown as Col<RowAny>[]
+        (s) => colsDescuento(productoOpts(s), precio, sugClientes) as unknown as Col<RowAny>[]
       ),
       nuevo: nuevoRowAny((s) => nuevoDescuento(productoOpts(s)[0]?.value ?? "bio")),
       validar: validarRowAny(validarDescuento),
@@ -266,7 +269,7 @@ export function ReporteDiaVista({
       titulo: "Adelantos",
       n: filtradas.reduce((a, s) => a + s.adelantos.length, 0),
       total: rep.totalAdelantos,
-      grupos: grupos("adelantos", () => colsAdelanto() as unknown as Col<RowAny>[]),
+      grupos: grupos("adelantos", () => colsAdelanto(sugClientes) as unknown as Col<RowAny>[]),
       nuevo: nuevoRowAny(() => nuevoAdelanto()),
       validar: validarRowAny(validarAdelanto),
     },
@@ -355,8 +358,8 @@ export function ReporteDiaVista({
       )}
 
       {/* Odómetros */}
-      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
-        <div className="bg-slate-800 px-4 py-1.5 text-center text-xs font-bold tracking-wide text-white">
+      <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
+        <div className="border-b bg-muted/60 px-4 py-2 text-center text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
           {esGeneral
             ? "ODÓMETROS DEL DÍA · inicio (mañana) → final (noche)"
             : `ODÓMETROS · ${TURNOS.find((t) => t.id === filtroTurno)?.label} (editable)`}
@@ -426,7 +429,7 @@ export function ReporteDiaVista({
                   </TableRow>
                 );
               })}
-              <TableRow className="bg-slate-100 font-bold dark:bg-slate-800">
+              <TableRow className="bg-muted font-bold">
                 <TableCell colSpan={5} className="text-right">
                   SUMA EN SOLES
                 </TableCell>

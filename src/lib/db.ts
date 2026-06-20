@@ -182,6 +182,9 @@ export function subscribeConfig<T>(
 export const setPreciosRemoto = (p: Precios) => setConfig("precios", p);
 export const setTrabajadoresRemoto = (nombres: string[]) =>
   setConfig("trabajadores", { nombres });
+// Lista de clientes (autocompletado de créditos/descuentos/adelantos).
+export const setClientesRemoto = (nombres: string[]) =>
+  setConfig("clientes", { nombres });
 
 // ===== Backups (copias de seguridad) =====
 // Cada backup es una instantánea de TODAS las sesiones + la config en un
@@ -199,7 +202,11 @@ export interface Backup {
   dia: string;
   nota?: string; // etiqueta legible: "Turno mañana completo", "Manual"…
   sesiones: Sesion[];
-  config: { precios?: Precios; trabajadores?: { nombres: string[] } };
+  config: {
+    precios?: Precios;
+    trabajadores?: { nombres: string[] };
+    clientes?: { nombres: string[] };
+  };
 }
 
 type FilaBackup = {
@@ -261,10 +268,11 @@ export async function crearBackup(opts?: {
 }): Promise<Backup | null> {
   const sb = getSupabase();
   if (!sb) return null;
-  const [sesiones, precios, trabajadores] = await Promise.all([
+  const [sesiones, precios, trabajadores, clientes] = await Promise.all([
     fetchTodasSesiones(),
     getConfig<Precios>("precios"),
     getConfig<{ nombres: string[] }>("trabajadores"),
+    getConfig<{ nombres: string[] }>("clientes"),
   ]);
   const now = Date.now();
   const fila: FilaBackup = {
@@ -275,6 +283,7 @@ export async function crearBackup(opts?: {
     config: limpio({
       precios: precios ?? undefined,
       trabajadores: trabajadores ?? undefined,
+      clientes: clientes ?? undefined,
       nota: opts?.nota ?? "Manual",
     }),
   };
@@ -316,6 +325,7 @@ export async function restaurarBackup(b: Backup): Promise<void> {
   }
   if (b.config?.precios) await setConfig("precios", b.config.precios);
   if (b.config?.trabajadores) await setConfig("trabajadores", b.config.trabajadores);
+  if (b.config?.clientes) await setConfig("clientes", b.config.clientes);
 }
 
 export async function deleteBackup(id: string): Promise<void> {

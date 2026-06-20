@@ -48,73 +48,98 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ===========================================================================
+   Paleta de marca GrifoSys — "premium SaaS 2026".
+   Marca: ámbar/naranja cálido sobre superficies slate de tinte frío.
+   Todo pasa por tokens: cambiar la marca = cambiar estas variables.
+   =========================================================================== */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Superficies: blanco cálido casi imperceptible, texto slate profundo */
+  --background: oklch(0.984 0.003 95);
+  --foreground: oklch(0.22 0.03 260);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.22 0.03 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.22 0.03 260);
+
+  /* Marca: ámbar/naranja intenso, texto blanco encima */
+  --primary: oklch(0.69 0.18 53);
+  --primary-foreground: oklch(0.99 0.01 90);
+
+  /* Secundario / muted: slate frío suave */
+  --secondary: oklch(0.965 0.006 250);
+  --secondary-foreground: oklch(0.3 0.03 260);
+  --muted: oklch(0.965 0.006 250);
+  --muted-foreground: oklch(0.52 0.02 258);
+
+  /* Acento: tinte ámbar muy claro para hovers/selección */
+  --accent: oklch(0.95 0.03 75);
+  --accent-foreground: oklch(0.42 0.13 55);
+
+  --destructive: oklch(0.585 0.22 25);
+  --border: oklch(0.9 0.006 255);
+  --input: oklch(0.9 0.006 255);
+  --ring: oklch(0.69 0.18 53);
+
+  /* Paleta categórica real (gráficos / estados) */
+  --chart-1: oklch(0.69 0.18 53);   /* ámbar marca */
+  --chart-2: oklch(0.62 0.13 230);  /* azul */
+  --chart-3: oklch(0.6 0.15 150);   /* verde */
+  --chart-4: oklch(0.58 0.2 300);   /* violeta */
+  --chart-5: oklch(0.65 0.2 350);   /* rosa */
+
+  --radius: 0.7rem;
+
+  --sidebar: oklch(0.995 0.002 95);
+  --sidebar-foreground: oklch(0.22 0.03 260);
+  --sidebar-primary: oklch(0.69 0.18 53);
+  --sidebar-primary-foreground: oklch(0.99 0.01 90);
+  --sidebar-accent: oklch(0.95 0.03 75);
+  --sidebar-accent-foreground: oklch(0.42 0.13 55);
+  --sidebar-border: oklch(0.9 0.006 255);
+  --sidebar-ring: oklch(0.69 0.18 53);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Slate profundo de tinte frío (no negro puro) */
+  --background: oklch(0.19 0.022 260);
+  --foreground: oklch(0.96 0.006 250);
+  --card: oklch(0.235 0.024 260);
+  --card-foreground: oklch(0.96 0.006 250);
+  --popover: oklch(0.235 0.024 260);
+  --popover-foreground: oklch(0.96 0.006 250);
+
+  /* Ámbar algo más luminoso para brillar sobre fondo oscuro */
+  --primary: oklch(0.76 0.16 62);
+  --primary-foreground: oklch(0.2 0.03 260);
+
+  --secondary: oklch(0.3 0.022 260);
+  --secondary-foreground: oklch(0.96 0.006 250);
+  --muted: oklch(0.3 0.022 260);
+  --muted-foreground: oklch(0.72 0.02 258);
+
+  --accent: oklch(0.34 0.05 62);
+  --accent-foreground: oklch(0.9 0.07 75);
+
+  --destructive: oklch(0.7 0.19 22);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.76 0.16 62);
+
+  --chart-1: oklch(0.76 0.16 62);
+  --chart-2: oklch(0.7 0.13 230);
+  --chart-3: oklch(0.7 0.15 150);
+  --chart-4: oklch(0.68 0.18 300);
+  --chart-5: oklch(0.72 0.18 350);
+
+  --sidebar: oklch(0.225 0.024 260);
+  --sidebar-foreground: oklch(0.96 0.006 250);
+  --sidebar-primary: oklch(0.76 0.16 62);
+  --sidebar-primary-foreground: oklch(0.2 0.03 260);
+  --sidebar-accent: oklch(0.34 0.05 62);
+  --sidebar-accent-foreground: oklch(0.9 0.07 75);
+  --sidebar-border: oklch(1 0 0 / 9%);
+  --sidebar-ring: oklch(0.76 0.16 62);
 }
 
 @layer base {
@@ -190,6 +215,59 @@
     display: inline-flex;
     white-space: nowrap;
     animation: gs-marquee 22s linear infinite;
+  }
+
+  /* Barra superior premium: gradiente slate profundo con realce sutil */
+  .gs-topbar {
+    background: linear-gradient(
+      180deg,
+      oklch(0.26 0.026 260),
+      oklch(0.2 0.022 260)
+    );
+    box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.06) inset,
+      0 8px 24px -16px rgb(0 0 0 / 0.6);
+  }
+
+  /* Tarjeta con borde luminoso al pasar el mouse (acción/selección) */
+  .gs-card {
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.22s ease, border-color 0.22s ease;
+  }
+  .gs-card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in oklch, var(--primary), transparent 55%);
+    box-shadow: 0 10px 30px -16px rgb(0 0 0 / 0.45);
+  }
+
+  /* Encabezado de sección con barra de acento ámbar a la izquierda */
+  .gs-section-bar {
+    background: linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--primary), transparent 88%),
+      transparent 55%
+    );
+    border-left: 3px solid var(--primary);
+  }
+
+  /* Realce de "chip" con vidrio sutil */
+  .gs-chip {
+    background: color-mix(in oklch, var(--card), transparent 30%);
+    backdrop-filter: blur(6px);
+  }
+}
+
+/* Transición suave al alternar tema (claro ↔ oscuro). Se desactiva durante
+   el cambio explícito para evitar arrastres raros en elementos puntuales. */
+@media (prefers-reduced-motion: no-preference) {
+  :root,
+  .dark {
+    --gs-theme-transition: background-color 0.35s ease, border-color 0.35s ease,
+      color 0.35s ease;
+  }
+  body,
+  .gs-topbar,
+  [data-slot="card"] {
+    transition: var(--gs-theme-transition);
   }
 }
 

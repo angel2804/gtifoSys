@@ -6,10 +6,12 @@ import { useStore } from "@/lib/store";
 import { diaMenos, diaOperativoActual } from "@/lib/calc";
 import {
   fetchSesionesDesde,
+  setClientesRemoto,
   subscribeConfig,
   subscribeSesiones,
   upsertSesion,
 } from "@/lib/db";
+import { aprenderClientes } from "@/lib/clientes";
 import { supabaseHabilitado } from "@/lib/supabase";
 import type { Precios, Sesion } from "@/lib/types";
 
@@ -25,6 +27,7 @@ export function SupabaseSync() {
   const mergeRemoteSesiones = useStore((s) => s.mergeRemoteSesiones);
   const setPrecios = useStore((s) => s.setPrecios);
   const setTrabajadores = useStore((s) => s.setTrabajadores);
+  const setClientes = useStore((s) => s.setClientes);
 
   // Precios globales en vivo (config/precios)
   useEffect(() => {
@@ -39,6 +42,39 @@ export function SupabaseSync() {
       if (Array.isArray(v.nombres) && v.nombres.length) setTrabajadores(v.nombres);
     });
   }, [setTrabajadores]);
+
+  // Lista de clientes en vivo (config/clientes). Se UNE con la lista local en
+  // vez de reemplazarla, para no perder clientes recién aprendidos en este
+  // dispositivo que aún no se subieron.
+  useEffect(() => {
+    if (!supabaseHabilitado) return;
+    return subscribeConfig<{ nombres: string[] }>("clientes", (v) => {
+      if (!Array.isArray(v.nombres)) return;
+      const { clientes } = useStore.getState();
+      const unidos = aprenderClientes(clientes, v.nombres);
+      if (unidos !== clientes) setClientes(unidos);
+    });
+  }, [setClientes]);
+
+  // Sube a Supabase la lista de clientes cuando crece localmente (debounced).
+  useEffect(() => {
+    if (!supabaseHabilitado) return;
+    let ultimoJson = JSON.stringify(useStore.getState().clientes);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsub = useStore.subscribe(() => {
+      const json = JSON.stringify(useStore.getState().clientes);
+      if (json === ultimoJson) return;
+      ultimoJson = json;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        setClientesRemoto(useStore.getState().clientes).catch(() => {});
+      }, 1000);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsub();
+    };
+  }, []);
 
   // Ventana reciente de sesiones en vivo (hoy y ayer) + guardado de la activa
   useEffect(() => {

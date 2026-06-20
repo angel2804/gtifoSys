@@ -31,7 +31,8 @@ create table if not exists public.config (
 -- Semilla opcional (puedes editar precios/trabajadores luego desde el panel admin)
 insert into public.config (key, value) values
   ('precios', '{"bio":15.0,"regular":16.0,"premium":17.5,"glp":2.5,"gasfull":60.0,"zetagas":58.0}'),
-  ('trabajadores', '{"nombres":["Angel","Lenin","Miguel"]}')
+  ('trabajadores', '{"nombres":["Angel","Lenin","Miguel"]}'),
+  ('clientes', '{"nombres":[]}')
 on conflict (key) do nothing;
 
 -- ============================================================

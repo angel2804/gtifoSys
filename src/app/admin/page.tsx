@@ -51,6 +51,7 @@ import type { PrecioKey, Sesion, TurnoId } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { SesionVista } from "@/components/grifo/sesion-vista";
 import { ReporteDiaVista } from "@/components/grifo/reporte-dia-vista";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Select,
   SelectContent,
@@ -470,9 +471,9 @@ export default function AdminPage() {
   if (!hydrated || !auth || auth.rol !== "admin") return null;
 
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-950 dark:to-slate-900">
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-background to-muted/40">
       {/* Header */}
-      <header className="flex items-center justify-between border-b bg-slate-900 px-4 py-2 text-white shadow-md">
+      <header className="gs-topbar flex items-center justify-between border-b border-white/10 px-4 py-2.5 text-white">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 animate-pulse-ring">
             <Fuel className="h-5 w-5 text-white" />
@@ -508,6 +509,7 @@ export default function AdminPage() {
 
         <div className="flex items-center gap-2">
           <PreciosEditor precios={precios} onChange={onChangePrecio} />
+          <ThemeToggle />
           <Button
             size="sm"
             variant="ghost"
@@ -524,7 +526,7 @@ export default function AdminPage() {
 
       <div className="flex flex-1">
         {/* Sidebar */}
-        <aside className="w-56 shrink-0 border-r bg-card p-3">
+        <aside className="w-56 shrink-0 border-r bg-sidebar p-3">
           <nav className="mb-3 space-y-1">
             <SideNav
               activo={vista === "activos"}
@@ -640,7 +642,7 @@ export default function AdminPage() {
                   );
                 })}
               </div>
-              <div className="rounded-xl border bg-card p-4 shadow-sm">
+              <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
                 {seleccionada ? (
                   <SesionVista sesion={seleccionada} precios={precios} />
                 ) : (
@@ -662,13 +664,13 @@ export default function AdminPage() {
                 onUpdateOdometro={onUpdateOdometro}
               />
             ) : (
-              <div className="rounded-xl border bg-card py-20 text-center text-sm text-muted-foreground shadow-sm">
+              <div className="rounded-2xl border border-border/60 bg-card py-20 text-center text-sm text-muted-foreground shadow-sm">
                 El reporte aparece a medida que los turnos van finalizando (un
                 turno se considera listo cuando sus 3 islas cerraron).
               </div>
             )
           ) : vista === "usuarios" ? (
-            <div className="max-w-md rounded-xl border bg-card p-4 shadow-sm">
+            <div className="max-w-md rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
               <h3 className="mb-1 text-base font-bold">Gestión de usuarios</h3>
               <p className="mb-3 text-xs text-muted-foreground">
                 Trabajadores que pueden iniciar sesión y elegir turno. Los
@@ -716,7 +718,7 @@ export default function AdminPage() {
               </div>
             </div>
           ) : vista === "exportar" ? (
-            <div className="max-w-md animate-fade-up rounded-xl border bg-card p-4 shadow-sm card-lift">
+            <div className="max-w-md animate-fade-up rounded-2xl border border-border/60 bg-card p-4 shadow-sm card-lift">
               <h3 className="mb-1 text-base font-bold">Exportar reporte</h3>
               <p className="mb-3 text-xs text-muted-foreground">
                 Elige un día (lista a la izquierda, últimos {DIAS_A_CONSERVAR} días).
@@ -866,7 +868,7 @@ export default function AdminPage() {
             </div>
           ) : (
             // vista === "config"
-            <div className="max-w-md rounded-xl border bg-card p-4 shadow-sm">
+            <div className="max-w-md rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
               <h3 className="mb-1 flex items-center gap-2 text-base font-bold">
                 <Settings className="h-4 w-4" /> Configuraciones
               </h3>
@@ -1092,7 +1094,7 @@ function PreciosEditor({
           <Button
             size="sm"
             variant="secondary"
-            className="h-8 bg-amber-500 text-black hover:bg-amber-400"
+            className="h-8 bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Tag className="mr-1 h-4 w-4" /> Precios
           </Button>

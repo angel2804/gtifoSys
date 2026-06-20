@@ -28,6 +28,8 @@ import {
 import { getIsla, turnoLabel } from "@/lib/config";
 import type { Sesion } from "@/lib/types";
 import type { Col } from "./registro-fields";
+import { AutocompleteInput } from "./autocomplete-input";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export interface Grupo<T> {
@@ -149,6 +151,14 @@ export function ReporteRegistroModal<T extends { id: string }>({
                       ))}
                     </SelectContent>
                   </Select>
+                ) : c.sugerencias && c.sugerencias.length > 0 ? (
+                  <AutocompleteInput
+                    className="h-8 text-xs"
+                    suggestions={c.sugerencias}
+                    value={(draft[c.key] as string) ?? ""}
+                    onChange={(v) => setDraft((d) => ({ ...d, [c.key]: v }))}
+                    onEnter={agregar}
+                  />
                 ) : (
                   <Input
                     className="h-8 text-xs"
@@ -239,6 +249,17 @@ export function ReporteRegistroModal<T extends { id: string }>({
                               ))}
                             </SelectContent>
                           </Select>
+                        ) : c.sugerencias && c.sugerencias.length > 0 ? (
+                          <AutocompleteInput
+                            className="h-7 min-w-20 text-xs"
+                            suggestions={c.sugerencias}
+                            value={(row[c.key] as string) ?? ""}
+                            onChange={(v) =>
+                              onUpdate(grupo.sesion.id, row.id, {
+                                [c.key]: v,
+                              } as Partial<T>)
+                            }
+                          />
                         ) : (
                           <Input
                             className="h-7 min-w-20 text-xs"
@@ -265,10 +286,11 @@ export function ReporteRegistroModal<T extends { id: string }>({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 px-2 text-red-500 hover:text-red-600"
+                        aria-label="Eliminar"
+                        className="h-7 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => onRemove(grupo.sesion.id, row.id)}
                       >
-                        🗑
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>
                   </TableRow>

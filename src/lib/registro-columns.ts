@@ -54,11 +54,12 @@ export function validarPago(r: Omit<PagoElectronico, "id">): string | null {
 
 export function colsCredito(
   productoOptions: ProductoOption[],
-  precio: PrecioFn
+  precio: PrecioFn,
+  clientes: string[] = []
 ): Col<Credito>[] {
   return [
     { key: "producto", label: "Producto", tipo: "select", options: productoOptions },
-    { key: "cliente", label: "Cliente", tipo: "text" },
+    { key: "cliente", label: "Cliente", tipo: "text", sugerencias: clientes },
     { key: "vale", label: "Vale N°", tipo: "text" },
     { key: "factura", label: "Factura", tipo: "text", opcional: true },
     { key: "galones", label: "Galones", tipo: "number" },
@@ -110,11 +111,12 @@ export const validarPromo = (r: Omit<Promocion, "id">): string | null =>
 
 export function colsDescuento(
   productoOptions: ProductoOption[],
-  precio: PrecioFn
+  precio: PrecioFn,
+  clientes: string[] = []
 ): Col<Descuento>[] {
   return [
     { key: "producto", label: "Producto", tipo: "select", options: productoOptions },
-    { key: "cliente", label: "Cliente", tipo: "text", opcional: true },
+    { key: "cliente", label: "Cliente", tipo: "text", opcional: true, sugerencias: clientes },
     { key: "galones", label: "Galones", tipo: "number" },
     { key: "precioDescuento", label: "Precio dado", tipo: "number" },
     {
@@ -152,9 +154,9 @@ export function validarGasto(r: Omit<Gasto, "id">): string | null {
   return null;
 }
 
-export function colsAdelanto(): Col<Adelanto>[] {
+export function colsAdelanto(clientes: string[] = []): Col<Adelanto>[] {
   return [
-    { key: "cliente", label: "Cliente", tipo: "text", opcional: true },
+    { key: "cliente", label: "Cliente", tipo: "text", opcional: true, sugerencias: clientes },
     { key: "monto", label: "Monto", tipo: "number" },
   ];
 }

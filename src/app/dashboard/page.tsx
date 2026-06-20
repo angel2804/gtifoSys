@@ -30,6 +30,7 @@ import {
 import { backupSiTurnoCompleto, upsertSesion } from "@/lib/db";
 import { useStore } from "@/lib/store";
 import { calcularCuadre, soles } from "@/lib/calc";
+import { clientesOrdenados } from "@/lib/clientes";
 import type {
   Adelanto,
   Balon,
@@ -43,6 +44,8 @@ import type {
 } from "@/lib/types";
 import { RegistroModal } from "@/components/grifo/registro-modal";
 import { RegistroAddForm } from "@/components/grifo/registro-fields";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   colsAdelanto,
@@ -84,6 +87,7 @@ export default function DashboardPage() {
   const setCurrentSesion = useStore((s) => s.setCurrentSesion);
   const logout = useStore((s) => s.logout);
   const precios = useStore((s) => s.precios);
+  const clientes = useStore((s) => s.clientes);
   const store = useStore();
 
   const [hydrated, setHydrated] = useState(false);
@@ -131,33 +135,38 @@ export default function DashboardPage() {
   }
 
   // ---- Columnas compartidas (formulario inline + modal tabla) ----
-  const cCredito = colsCredito(productoOptions, precio);
+  const sugClientes = clientesOrdenados(clientes);
+  const cCredito = colsCredito(productoOptions, precio, sugClientes);
   const cPromo = colsPromo(productoOptions, precio);
-  const cDescuento = colsDescuento(productoOptions, precio);
+  const cDescuento = colsDescuento(productoOptions, precio, sugClientes);
+  const cAdelanto = colsAdelanto(sugClientes);
   const cBalon = colsBalon(precios);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-950 dark:to-slate-900">
+    <div className="min-h-screen bg-gradient-to-b from-background to-muted/40">
       {/* Encabezado */}
-      <header className="sticky top-0 z-20 border-b bg-slate-900 text-white shadow-md">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2">
+      <header className="gs-topbar sticky top-0 z-20 border-b border-white/10 text-white">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <span className="text-lg font-bold">⛽ {isla.nombre}</span>
-            <Badge className="bg-amber-500 text-black hover:bg-amber-500">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 text-base shadow-md shadow-orange-900/40 ring-1 ring-white/20">
+              ⛽
+            </span>
+            <span className="text-base font-bold tracking-tight">{isla.nombre}</span>
+            <Badge className="bg-primary text-primary-foreground hover:bg-primary">
               {turnoLabel(sesion.turno)}
             </Badge>
-            <Badge variant="secondary">
+            <Badge variant="secondary" className="bg-white/10 text-white hover:bg-white/15">
               {auth.rol === "admin" ? "Admin" : auth.trabajador}
             </Badge>
           </div>
           {/* Precios */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             {isla.productos.map((p) => (
               <div
                 key={p}
-                className="flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-sm"
+                className="gs-chip flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1 text-sm"
               >
-                <span className="font-medium">{PRODUCTOS[p]}</span>
+                <span className="font-medium text-white/80">{PRODUCTOS[p]}</span>
                 <span className="font-bold text-amber-300">{soles(precio(p))}</span>
               </div>
             ))}
@@ -165,16 +174,17 @@ export default function DashboardPage() {
               (["gasfull", "zetagas"] as const).map((b) => (
                 <div
                   key={b}
-                  className="flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-sm"
+                  className="gs-chip flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1 text-sm"
                 >
-                  <span className="font-medium">{BALONES[b]}</span>
+                  <span className="font-medium text-white/80">{BALONES[b]}</span>
                   <span className="font-bold text-amber-300">
                     {soles(precios[b] ?? 0)}
                   </span>
                 </div>
               ))}
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Button
               size="sm"
               variant="ghost"
@@ -184,7 +194,7 @@ export default function DashboardPage() {
                 router.replace("/");
               }}
             >
-              Salir
+              <LogOut className="mr-1 h-4 w-4" /> Salir
             </Button>
           </div>
         </div>
@@ -194,9 +204,9 @@ export default function DashboardPage() {
         {/* ----- Columna izquierda ----- */}
         <div className="space-y-3 lg:col-span-2">
           {/* Odómetros estilo Excel */}
-          <section className="animate-fade-up overflow-hidden rounded-xl border bg-card shadow-sm">
-            <div className="bg-slate-800 px-4 py-1 text-center text-xs font-bold tracking-wide text-white">
-              ODÓMETROS
+          <section className="gs-card animate-fade-up overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
+            <div className="border-b bg-muted/60 px-4 py-2 text-center text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+              Odómetros
             </div>
             <div className="overflow-x-auto text-xs [&_td]:px-2 [&_td]:py-0.5 [&_th]:h-7 [&_th]:px-2">
               <Table>
@@ -268,9 +278,9 @@ export default function DashboardPage() {
           </section>
 
           {/* Ingresos / registros inline */}
-          <section className="animate-fade-up overflow-hidden rounded-xl border bg-card shadow-sm" style={{ animationDelay: "80ms" }}>
-            <div className="bg-slate-800 px-4 py-1 text-center text-xs font-bold tracking-wide text-white">
-              INGRESOS Y REGISTROS
+          <section className="gs-card animate-fade-up overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm" style={{ animationDelay: "80ms" }}>
+            <div className="border-b bg-muted/60 px-4 py-2 text-center text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+              Ingresos y registros
             </div>
             <div className="divide-y">
               <Seccion titulo="💳 Yapes / Transferencias / Visas">
@@ -320,7 +330,7 @@ export default function DashboardPage() {
               </Seccion>
               <Seccion titulo="💰 Pago adelantado">
                 <RegistroAddForm
-                  columns={colsAdelanto()}
+                  columns={cAdelanto}
                   nuevo={nuevoAdelanto}
                   validar={validarAdelanto}
                   dense
@@ -354,9 +364,9 @@ export default function DashboardPage() {
         {/* ----- Columna derecha ----- */}
         <div className="space-y-3">
           {/* Botones de tablas */}
-          <section className="animate-fade-up rounded-xl border bg-card p-2 shadow-sm" style={{ animationDelay: "120ms" }}>
-            <h3 className="mb-1.5 text-[11px] font-bold text-muted-foreground">
-              TABLAS
+          <section className="gs-card animate-fade-up rounded-2xl border border-border/60 bg-card p-2.5 shadow-sm" style={{ animationDelay: "120ms" }}>
+            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+              Tablas
             </h3>
             <div className="grid grid-cols-2 gap-1.5">
               <RegistroModal<PagoElectronico>
@@ -440,7 +450,7 @@ export default function DashboardPage() {
                 titulo="Pago adelantado"
                 islaNombre={isla.nombre}
                 rows={sesion.adelantos}
-                columns={colsAdelanto()}
+                columns={cAdelanto}
                 onUpdate={store.updateAdelanto}
                 onRemove={store.removeAdelanto}
                 resumen={(r) => `Total: ${soles(totalMonto(r))}`}
@@ -482,8 +492,10 @@ export default function DashboardPage() {
           </section>
 
           {/* Cuadre */}
-          <section className="animate-fade-up rounded-xl border bg-card p-3 shadow-sm" style={{ animationDelay: "160ms" }}>
-            <h3 className="mb-2 text-sm font-bold">🧮 Cuadre de caja</h3>
+          <section className="gs-card animate-fade-up rounded-2xl border border-border/60 bg-card p-3.5 shadow-sm" style={{ animationDelay: "160ms" }}>
+            <h3 className="mb-2.5 flex items-center gap-1.5 text-sm font-bold">
+              <span className="text-base">🧮</span> Cuadre de caja
+            </h3>
             <div className="space-y-0.5 text-xs">
               <Linea label="Venta total" valor={soles(cuadre.ventaTotal)} bold />
               <Linea label="− Créditos" valor={soles(cuadre.totalCreditos)} neg />
@@ -543,7 +555,7 @@ export default function DashboardPage() {
           </div>
 
           <Button
-            className="h-10 w-full bg-orange-500 text-sm font-bold transition-all hover:bg-orange-600 hover:shadow-lg hover:shadow-orange-500/30 active:scale-[0.98]"
+            className="h-11 w-full bg-primary text-sm font-bold tracking-wide text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/30 active:scale-[0.98]"
             onClick={() => setConfirmandoCierre(true)}
           >
             FINALIZAR TURNO
@@ -580,8 +592,8 @@ function Seccion({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5">
-      <h4 className="w-24 shrink-0 text-[11px] font-bold leading-tight">
+    <div className="flex items-center gap-2 px-2 py-2 transition-colors hover:bg-accent/40">
+      <h4 className="w-24 shrink-0 border-l-2 border-primary/60 pl-2 text-[11px] font-bold leading-tight">
         {titulo}
       </h4>
       <div className="flex-1">{children}</div>

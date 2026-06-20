@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Trash2 } from "lucide-react";
 import type { Col } from "./registro-fields";
 
 export type { Col } from "./registro-fields";
@@ -141,10 +142,11 @@ export function RegistroModal<T extends { id: string }>({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 px-2 text-red-500 hover:text-red-600"
+                      aria-label="Eliminar"
+                      className="h-7 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => onRemove(row.id)}
                     >
-                      🗑
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -154,7 +156,11 @@ export function RegistroModal<T extends { id: string }>({
         </div>
 
         {resumen && rows.length > 0 && (
-          <div className="text-right text-sm font-medium">{resumen(rows)}</div>
+          <div className="flex justify-end">
+            <span className="rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary">
+              {resumen(rows)}
+            </span>
+          </div>
         )}
       </DialogContent>
     </Dialog>

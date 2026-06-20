@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
+import { AutocompleteInput } from "./autocomplete-input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -20,6 +21,10 @@ export interface Col<T> {
   label: string;
   tipo: ColTipo;
   options?: { value: string; label: string }[];
+  // sugerencias de autocompletado para campos de texto (p. ej. nombres de
+  // clientes guardados). Se renderiza un <datalist> nativo: al teclear, el
+  // navegador muestra las coincidencias.
+  sugerencias?: string[];
   opcional?: boolean;
   // columna calculada de solo lectura (solo en la tabla)
   computar?: (row: T) => ReactNode;
@@ -101,6 +106,15 @@ export function RegistroAddForm<T extends { id: string }>({
                 ))}
               </SelectContent>
             </Select>
+          ) : c.sugerencias && c.sugerencias.length > 0 ? (
+            <AutocompleteInput
+              className={`${h} ${dense ? "text-xs" : ""}`}
+              placeholder={dense ? ph(c) : undefined}
+              suggestions={c.sugerencias}
+              value={(draft[c.key] as string) ?? ""}
+              onChange={(v) => setField(c.key, v)}
+              onEnter={agregar}
+            />
           ) : (
             <Input
               className={`${h} ${dense ? "text-xs" : ""}`}

@@ -77,7 +77,7 @@ export function SesionVista({
       {/* Cabecera del turno */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-bold">{isla.nombre}</span>
-        <Badge className="bg-amber-500 text-black hover:bg-amber-500">
+        <Badge className="bg-primary text-primary-foreground hover:bg-primary">
           {turnoLabel(sesion.turno)}
         </Badge>
         <Badge variant="secondary">{sesion.trabajador}</Badge>
@@ -129,7 +129,7 @@ export function SesionVista({
                   </TableRow>
                 );
               })}
-              <TableRow className="bg-slate-100 font-bold dark:bg-slate-800">
+              <TableRow className="bg-muted font-bold">
                 <TableCell colSpan={5} className="text-right">
                   SUMA EN SOLES
                 </TableCell>

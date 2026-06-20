@@ -19,6 +19,7 @@ import type {
   TurnoId,
 } from "./types";
 import { getIsla, PRECIOS_DEFAULT, TRABAJADORES_DEFAULT } from "./config";
+import { aprenderClientes } from "./clientes";
 import { diaActivoParaNuevosTurnos, diaOperativo, diaOperativoDe } from "./calc";
 
 const TURNO_ORDEN: TurnoId[] = ["manana", "tarde", "noche"];
@@ -44,10 +45,15 @@ interface StoreState {
   currentSesionId: string | null;
   precios: Precios; // precios globales (sincronizados con Firestore config/precios)
   trabajadores: string[]; // sincronizados con Firestore config/trabajadores
+  clientes: string[]; // nombres de clientes (créditos/descuentos/adelantos), sincronizados con config/clientes
 
   setPrecios: (p: Precios) => void;
   setPrecio: (k: PrecioKey, v: number) => void;
   setTrabajadores: (t: string[]) => void;
+  setClientes: (c: string[]) => void;
+  // Aprende uno o más nombres de cliente: los agrega a la lista si no existen
+  // (sin distinguir mayúsculas/acentos). Devuelve true si la lista cambió.
+  aprenderClientes: (nombres: (string | undefined)[]) => boolean;
 
   loginAdmin: () => void;
   loginTrabajador: (nombre: string) => void;
@@ -158,10 +164,19 @@ export const useStore = create<StoreState>()(
       currentSesionId: null,
       precios: { ...PRECIOS_DEFAULT },
       trabajadores: [...TRABAJADORES_DEFAULT],
+      clientes: [],
 
       setPrecios: (p) => set({ precios: p }),
       setPrecio: (k, v) => set((s) => ({ precios: { ...s.precios, [k]: v } })),
       setTrabajadores: (t) => set({ trabajadores: t }),
+      setClientes: (c) => set({ clientes: c }),
+      aprenderClientes: (nombres) => {
+        const actuales = get().clientes;
+        const siguientes = aprenderClientes(actuales, nombres);
+        if (siguientes === actuales) return false; // sin cambios
+        set({ clientes: siguientes });
+        return true;
+      },
 
       loginAdmin: () => set({ auth: { rol: "admin", trabajador: "" } }),
       loginTrabajador: (nombre) =>
@@ -252,11 +267,13 @@ export const useStore = create<StoreState>()(
           pagos: s.pagos.filter((x) => x.id !== id),
         })),
 
-      addCredito: (c) =>
+      addCredito: (c) => {
+        get().aprenderClientes([c.cliente]);
         mutateCurrent(set, get, (s) => ({
           ...s,
           creditos: [...s.creditos, { ...c, id: uid() }],
-        })),
+        }));
+      },
       updateCredito: (id, c) =>
         mutateCurrent(set, get, (s) => ({
           ...s,
@@ -286,11 +303,13 @@ export const useStore = create<StoreState>()(
           promociones: s.promociones.filter((x) => x.id !== id),
         })),
 
-      addDescuento: (d) =>
+      addDescuento: (d) => {
+        get().aprenderClientes([d.cliente]);
         mutateCurrent(set, get, (s) => ({
           ...s,
           descuentos: [...s.descuentos, { ...d, id: uid() }],
-        })),
+        }));
+      },
       updateDescuento: (id, d) =>
         mutateCurrent(set, get, (s) => ({
           ...s,
@@ -320,11 +339,13 @@ export const useStore = create<StoreState>()(
           gastos: s.gastos.filter((x) => x.id !== id),
         })),
 
-      addAdelanto: (a) =>
+      addAdelanto: (a) => {
+        get().aprenderClientes([a.cliente]);
         mutateCurrent(set, get, (s) => ({
           ...s,
           adelantos: [...s.adelantos, { ...a, id: uid() }],
-        })),
+        }));
+      },
       updateAdelanto: (id, a) =>
         mutateCurrent(set, get, (s) => ({
           ...s,
@@ -431,6 +452,7 @@ export const useStore = create<StoreState>()(
         }
         if (!state.precios) state.precios = { ...PRECIOS_DEFAULT };
         if (!state.trabajadores) state.trabajadores = [...TRABAJADORES_DEFAULT];
+        if (!state.clientes) state.clientes = [];
         return state;
       },
     }
