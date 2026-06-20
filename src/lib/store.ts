@@ -21,7 +21,7 @@ import type {
 } from "./types";
 import { getIsla, PRECIOS_DEFAULT, TRABAJADORES_DEFAULT } from "./config";
 import { aprenderClientes } from "./clientes";
-import { diaActivoParaNuevosTurnos, diaOperativo, diaOperativoDe } from "./calc";
+import { diaActivoParaNuevosTurnos, diaOperativo } from "./calc";
 
 const TURNO_ORDEN: TurnoId[] = ["manana", "tarde", "noche"];
 // Versión del esquema de cada documento de sesión en Firestore.
@@ -432,10 +432,18 @@ export const useStore = create<StoreState>()(
           const locales = new Map(base.map((s) => [s.id, s]));
           remotas.forEach((r) => {
             // El remoto gana (refleja correcciones del admin y mantiene la
-            // verdad de la nube), EXCEPTO la sesión que este dispositivo está
-            // editando ahora mismo: esa se conserva local para no pisar lo
-            // que el trabajador está tecleando.
-            if (r.id === activa && locales.has(r.id)) return;
+            // verdad de la nube). Para la sesión activa de ESTE dispositivo
+            // solo se acepta la versión remota si es MÁS NUEVA que la local:
+            //  - Mientras el trabajador teclea aquí, su `updatedAt` se renueva
+            //    en cada cambio, así que su versión local gana y no se pisa
+            //    lo que está escribiendo.
+            //  - Si dejó este equipo y siguió en otro (p. ej. PC → celular),
+            //    al volver este recibe esa versión más reciente en vez de
+            //    quedarse con datos viejos y pisarlos.
+            const local = locales.get(r.id);
+            if (r.id === activa && local && local.updatedAt >= r.updatedAt) {
+              return;
+            }
             locales.set(r.id, r);
           });
           return { sesiones: Array.from(locales.values()) };
@@ -445,20 +453,27 @@ export const useStore = create<StoreState>()(
     }),
     {
       name: "grifo-sys",
-      version: 4,
+      version: 5,
+      // Los datos de los turnos (`sesiones`) NO se guardan en localStorage:
+      // siempre se traen frescos de Supabase al abrir. Así un reset de base
+      // hecho desde otro equipo no deja un turno "zombie" pegado en el caché
+      // local. En cambio SÍ se conserva `currentSesionId` (solo un id) para
+      // que al recargar el trabajador vuelva automáticamente a su turno
+      // abierto, como funcionaba antes; si ese turno ya no existe en Supabase
+      // (fue reseteado), simplemente no habrá sesión activa y se vuelve al
+      // setup, sin mostrar datos viejos.
+      partialize: (state) => {
+        const { sesiones, ...resto } = state;
+        void sesiones;
+        return resto as StoreState;
+      },
       migrate: (persisted) => {
         const state = persisted as StoreState;
-        if (state?.sesiones) {
-          state.sesiones = state.sesiones.map((s) => ({
-            ...s,
-            entregas: s.entregas ?? [],
-            balones: s.balones ?? [],
-            // Campos nuevos (v4): rellenar para docs locales antiguos.
-            diaOperativo: s.diaOperativo ?? diaOperativoDe(s.createdAt, s.turno),
-            updatedAt: s.updatedAt ?? s.createdAt,
-            schemaVersion: s.schemaVersion ?? SCHEMA_VERSION,
-          }));
-        }
+        // v5: los turnos ya no se cachean en localStorage. Se descartan los
+        // que hubiera guardado una versión anterior (evita turnos "zombie")
+        // y se traerán frescos de Supabase.
+        state.sesiones = [];
+        state.currentSesionId = null;
         if (!state.precios) state.precios = { ...PRECIOS_DEFAULT };
         if (!state.trabajadores) state.trabajadores = [...TRABAJADORES_DEFAULT];
         if (!state.clientes) state.clientes = [];
