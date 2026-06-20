@@ -82,6 +82,22 @@ const DIAS_A_CONSERVAR = 7;
 
 type Vista = "activos" | "reporte" | "usuarios" | "exportar" | "config";
 
+// Dispara la descarga de un blob de forma robusta. El <a> debe agregarse al
+// DOM y el objeto URL revocarse después (no de inmediato), o algunos
+// navegadores bloquean la descarga pidiendo permiso ("se necesita permiso
+// para continuar con la descarga").
+function descargarBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const auth = useStore((s) => s.auth);
@@ -257,12 +273,7 @@ export default function AdminPage() {
       });
       if (!res.ok) throw new Error("export failed");
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `reporte_${selectedDia}_${exportTurno}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      descargarBlob(blob, `reporte_${selectedDia}_${exportTurno}.xlsx`);
     } catch {
       toast.error("No se pudo generar el Excel");
     } finally {
@@ -291,13 +302,8 @@ export default function AdminPage() {
       });
       if (!res.ok) throw new Error("export failed");
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
       const islaNombre = ISLAS.find((i) => i.id === exportIslaId)?.nombre ?? exportIslaId;
-      a.download = `reporte_${selectedDia}_${exportTurnoIsla}_${islaNombre}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      descargarBlob(blob, `reporte_${selectedDia}_${exportTurnoIsla}_${islaNombre}.xlsx`);
     } catch {
       toast.error("No se pudo generar el Excel de la isla");
     } finally {
@@ -380,12 +386,7 @@ export default function AdminPage() {
     const blob = new Blob([JSON.stringify(b, null, 2)], {
       type: "application/json",
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `backup_grifosys_${b.dia}_${b.id}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    descargarBlob(blob, `backup_grifosys_${b.dia}_${b.id}.json`);
   }
 
   // ---- Exportar reporte GENERAL del día (plantilla "madre") ----
@@ -404,12 +405,7 @@ export default function AdminPage() {
         return;
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `reporte_general_${selectedDia}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      descargarBlob(blob, `reporte_general_${selectedDia}.xlsx`);
     } catch {
       toast.error("No se pudo generar el reporte general");
     } finally {
