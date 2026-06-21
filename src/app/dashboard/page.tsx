@@ -147,7 +147,7 @@ export default function DashboardPage() {
   const cCredito = colsCredito(productoOptions, precio, sugClientes);
   const cPromo = colsPromo(productoOptions, precio);
   const cDescuento = colsDescuento(productoOptions, precio, sugClientes);
-  const cAdelanto = colsAdelanto(sugClientes);
+  const cAdelanto = colsAdelanto();
   const cBalon = colsBalon(precios);
 
   return (

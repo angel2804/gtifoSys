@@ -351,7 +351,8 @@ export const useStore = create<StoreState>()(
         })),
 
       addAdelanto: (a) => {
-        get().aprenderClientes([a.cliente]);
+        // Los adelantos ya no usan "cliente" sino "descripcion" libre: no se
+        // aprenden como clientes ni alimentan el autocompletado.
         mutateCurrent(set, get, (s) => ({
           ...s,
           adelantos: [...s.adelantos, { ...a, id: uid() }],

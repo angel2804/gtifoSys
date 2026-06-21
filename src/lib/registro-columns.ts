@@ -155,13 +155,13 @@ export function validarGasto(r: Omit<Gasto, "id">): string | null {
   return null;
 }
 
-export function colsAdelanto(clientes: string[] = []): Col<Adelanto>[] {
+export function colsAdelanto(): Col<Adelanto>[] {
   return [
-    { key: "cliente", label: "Cliente", tipo: "text", opcional: true, sugerencias: clientes },
+    { key: "descripcion", label: "Descripción", tipo: "text", opcional: true },
     { key: "monto", label: "Monto", tipo: "number" },
   ];
 }
-export const nuevoAdelanto = (): Omit<Adelanto, "id"> => ({ cliente: "", monto: 0 });
+export const nuevoAdelanto = (): Omit<Adelanto, "id"> => ({ descripcion: "", monto: 0 });
 export const validarAdelanto = (r: Omit<Adelanto, "id">): string | null =>
   !r.monto || r.monto <= 0 ? "El monto es obligatorio" : null;
 

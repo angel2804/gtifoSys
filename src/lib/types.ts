@@ -80,7 +80,7 @@ export interface Gasto {
 
 export interface Adelanto {
   id: string;
-  cliente?: string;
+  descripcion?: string;
   monto: number;
 }
 

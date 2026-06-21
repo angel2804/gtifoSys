@@ -31,6 +31,7 @@ import {
   upsertSesion,
   type Backup,
 } from "@/lib/db";
+import { clientesOrdenados } from "@/lib/clientes";
 import { uid, useStore } from "@/lib/store";
 import {
   BALONES,
@@ -70,6 +71,7 @@ import {
   CalendarDays,
   Tag,
   Users,
+  Contact,
   Download,
   Trash2,
   Settings,
@@ -83,7 +85,7 @@ import {
 // automáticamente. Ver limpieza en el efecto de retención más abajo.
 const DIAS_A_CONSERVAR = 7;
 
-type Vista = "activos" | "reporte" | "usuarios" | "exportar" | "config";
+type Vista = "activos" | "reporte" | "usuarios" | "clientes" | "exportar" | "config";
 
 // Dispara la descarga de un blob de forma robusta. El <a> debe agregarse al
 // DOM y el objeto URL revocarse después (no de inmediato), o algunos
@@ -110,6 +112,8 @@ export default function AdminPage() {
   const trabajadores = useStore((s) => s.trabajadores);
   const setTrabajadoresStore = useStore((s) => s.setTrabajadores);
   const aprenderClientesStore = useStore((s) => s.aprenderClientes);
+  const clientes = useStore((s) => s.clientes);
+  const setClientesStore = useStore((s) => s.setClientes);
   const logo = useStore((s) => s.logo);
   const setLogo = useStore((s) => s.setLogo);
   const admins = useStore((s) => s.admins);
@@ -130,6 +134,8 @@ export default function AdminPage() {
   const [exportIslaId, setExportIslaId] = useState<string | null>(null);
   const [exportandoIsla, setExportandoIsla] = useState(false);
   const [nuevoNombre, setNuevoNombre] = useState("");
+  const [nuevoCliente, setNuevoCliente] = useState("");
+  const [paginaCliente, setPaginaCliente] = useState(0);
   const [conectado, setConectado] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const resetSesiones = useStore((s) => s.resetSesiones);
@@ -518,6 +524,24 @@ export default function AdminPage() {
       setClientesRemoto(useStore.getState().clientes).catch(() => {});
     }
   }
+  // ---- Gestión de la lista de clientes (autocompletado) ----
+  function persistClientes(lista: string[]) {
+    setClientesStore(lista);
+    setClientesRemoto(lista).catch(() => {});
+  }
+  function agregarCliente() {
+    const nombre = nuevoCliente.trim().toUpperCase();
+    if (!nombre) return;
+    if (clientes.some((c) => c.toUpperCase() === nombre)) {
+      setNuevoCliente("");
+      return;
+    }
+    persistClientes([...clientes, nombre]);
+    setNuevoCliente("");
+  }
+  function quitarCliente(nombre: string) {
+    persistClientes(clientes.filter((c) => c !== nombre));
+  }
   function onUpdateOdometro(
     sesionId: string,
     mangueraId: string,
@@ -619,6 +643,12 @@ export default function AdminPage() {
               onClick={() => setVista("usuarios")}
               icon={<Users className="h-4 w-4" />}
               label="Usuarios"
+            />
+            <SideNav
+              activo={vista === "clientes"}
+              onClick={() => setVista("clientes")}
+              icon={<Contact className="h-4 w-4" />}
+              label="Clientes"
             />
             <SideNav
               activo={vista === "exportar"}
@@ -791,6 +821,84 @@ export default function AdminPage() {
                 ))}
               </div>
             </div>
+          ) : vista === "clientes" ? (
+            (() => {
+              const POR_PAGINA = 30;
+              const ordenados = clientesOrdenados(clientes);
+              const totalPaginas = Math.max(1, Math.ceil(ordenados.length / POR_PAGINA));
+              const pagina = Math.min(paginaCliente, totalPaginas - 1);
+              const visibles = ordenados.slice(
+                pagina * POR_PAGINA,
+                pagina * POR_PAGINA + POR_PAGINA
+              );
+              return (
+                <div className="max-w-3xl rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+                  <h3 className="mb-1 text-base font-bold">Gestión de clientes</h3>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Clientes que aparecen como sugerencia al registrar créditos y
+                    descuentos. Se guardan en MAYÚSCULAS y se sincronizan al instante.
+                  </p>
+                  <div className="mb-3 flex max-w-md gap-2">
+                    <Input
+                      placeholder="Nombre del cliente"
+                      value={nuevoCliente}
+                      onChange={(e) => setNuevoCliente(e.target.value.toUpperCase())}
+                      onKeyDown={(e) => e.key === "Enter" && agregarCliente()}
+                      className="h-9"
+                    />
+                    <Button size="sm" className="h-9" onClick={agregarCliente}>
+                      + Agregar
+                    </Button>
+                  </div>
+                  {clientes.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No hay clientes registrados.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                        {visibles.map((nombre) => (
+                          <div
+                            key={nombre}
+                            className="flex items-center justify-between gap-1 rounded-md border px-2 py-1 text-xs"
+                          >
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-[10px] font-bold text-white">
+                                {nombre[0]}
+                              </span>
+                              <span className="truncate">{nombre}</span>
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 shrink-0 px-0 text-red-500 hover:text-red-600"
+                              onClick={() => quitarCliente(nombre)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                      {totalPaginas > 1 && (
+                        <div className="mt-3 flex flex-wrap items-center gap-1">
+                          {Array.from({ length: totalPaginas }, (_, i) => (
+                            <Button
+                              key={i}
+                              size="sm"
+                              variant={i === pagina ? "default" : "outline"}
+                              className="h-7 w-7 px-0 text-xs"
+                              onClick={() => setPaginaCliente(i)}
+                            >
+                              {i + 1}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()
           ) : vista === "exportar" ? (
             <div className="max-w-md animate-fade-up rounded-2xl border border-border/60 bg-card p-4 shadow-sm card-lift">
               <h3 className="mb-1 text-base font-bold">Exportar reporte</h3>

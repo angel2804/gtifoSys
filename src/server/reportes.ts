@@ -8,9 +8,18 @@
 import ExcelJS from "exceljs";
 import { calcularReporteDia } from "@/lib/calc";
 import { ISLAS } from "@/lib/config";
-import type { Precios, ProductoId, Sesion, TurnoId } from "@/lib/types";
+import type { MetodoPago, Precios, ProductoId, Sesion, TurnoId } from "@/lib/types";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+
+// Cómo se muestra cada método de pago en el Excel (el método "culqui" se
+// rotula "YAPE CULQUI").
+const METODO_LABEL: Record<MetodoPago, string> = {
+  yape: "YAPE",
+  transferencia: "TRANSFERENCIA",
+  visa: "VISA",
+  culqui: "YAPE CULQUI",
+};
 const EPS = 0.01;
 
 // ===========================================================================
@@ -55,6 +64,7 @@ export function llenarHojaMadre(
   const creditos = sesiones.flatMap((s) => s.creditos);
   const promociones = sesiones.flatMap((s) => s.promociones);
   const todosPagos = sesiones.flatMap((s) => s.pagos);
+  const adelantos = sesiones.flatMap((s) => s.adelantos);
 
   const galonesPorProducto = (p: ProductoId) =>
     rep.porProducto.find((f) => f.producto === p)?.galones ?? 0;
@@ -114,15 +124,29 @@ export function llenarHojaMadre(
     }
   }
 
-  // Mapea un número de fila ORIGINAL (de la plantilla) a su posición final
-  // tras las inserciones anteriores.
+  // Pagos adelantados: ocupan las filas 50..53 (4 huecos, donde antes estaba
+  // "SE DEVUELVE ACOPLE"). Si hay más de 4, se insertan filas extra tras la 53.
+  const extraAdelantos = Math.max(0, adelantos.length - 4);
+
+  // Mapea un número de fila ORIGINAL de la plantilla a su posición final tras
+  // todas las inserciones. Siempre se inserta 1 fila para "YAPE CULQUI" tras
+  // YAPE (59); las filas 54+ además se corren por los adelantos extra.
   function mapRow(original: number): number {
     let r = original;
     if (original >= 19) r += extraDescuentos;
     if (original >= 37) r += extraCreditos;
     if (original >= 38) r += extraPromos;
+    if (original >= 54) r += extraAdelantos; // filas extra de adelantos (tras 53)
+    if (original >= 60) r += 1; // fila YAPE CULQUI insertada tras YAPE (59)
     return r;
   }
+
+  // Inserta físicamente las filas extra de adelantos (clonando la 53, en
+  // blanco) y luego la fila YAPE CULQUI (clonando YAPE, hereda su estilo). Las
+  // etiquetas y montos se escriben más abajo.
+  if (extraAdelantos > 0) ws.duplicateRow(mapRow(53), extraAdelantos, true);
+  const filaYapeCulqui = mapRow(59) + 1;
+  ws.duplicateRow(mapRow(59), 1, true);
 
   // --- Encabezado ---
   ws.getCell("B3").value = fechaTitulo(dia);
@@ -197,32 +221,46 @@ export function llenarHojaMadre(
   // --- Balones de gas (Full Gas | Zeta Gas) ---
   setSoles(`L${mapRow(49)}`, r2(rep.totalBalones));
 
-  // Sin datos en el sistema: se deja vacío (no se inventan valores)
-  ws.getCell(`L${mapRow(50)}`).value = null;
-  ws.getCell(`B${mapRow(51)}`).value = null;
-  ws.getCell(`B${mapRow(52)}`).value = null;
-  ws.getCell(`B${mapRow(53)}`).value = null;
-  ws.getCell(`L${mapRow(51)}`).value = null;
-  ws.getCell(`L${mapRow(52)}`).value = null;
-  ws.getCell(`L${mapRow(53)}`).value = null;
+  // --- PAGOS ADELANTADOS (filas 50..53, o más) ---
+  // Reemplazan a la antigua fila "SE DEVUELVE ACOPLE". Cada adelanto muestra su
+  // descripción (col B) y su monto (col L). Los huecos sobrantes se limpian.
+  const adelantoInicio = mapRow(50);
+  const slotsAdelanto = Math.max(4, adelantos.length);
+  for (let i = 0; i < slotsAdelanto; i++) {
+    const fila = adelantoInicio + i;
+    if (i < adelantos.length) {
+      ws.getCell(`B${fila}`).value = adelantos[i].descripcion || "";
+      setSoles(`L${fila}`, r2(adelantos[i].monto));
+    } else {
+      ws.getCell(`B${fila}`).value = null;
+      ws.getCell(`L${fila}`).value = null;
+    }
+  }
 
   // --- TOTAL = venta toten + balones ---
   const totalGeneral = r2(totalVentaToten + rep.totalBalones);
   setSoles(`L${mapRow(54)}`, totalGeneral);
 
   // --- Deducciones ---
+  // Las etiquetas se escriben explícitamente: tras los corrimientos de filas
+  // (overflow, adelantos, Yape Culqui) la plantilla a veces perdía alguna (p.
+  // ej. "GASTOS"), así que se garantizan por código.
+  ws.getCell(`B${mapRow(56)}`).value = "DESCUENTOS";
+  ws.getCell(`B${mapRow(57)}`).value = "GASTOS";
+  ws.getCell(`B${mapRow(58)}`).value = "VISAS REFERENCIA";
+  ws.getCell(`B${mapRow(59)}`).value = "YAPE";
+  ws.getCell(`B${mapRow(60)}`).value = "TRANSFERENCIAS";
   setSoles(`L${mapRow(56)}`, r2(rep.totalDescuentos));
   setSoles(`L${mapRow(57)}`, r2(rep.totalGastos));
   const visas = r2(sumaPagos("visa"));
   const yapes = r2(sumaPagos("yape"));
   const transferencias = r2(sumaPagos("transferencia"));
-  // La plantilla madre solo tiene 3 filas de pago electrónico (Visa, Yape,
-  // Transferencia). "Visa Yape Culqui" se cobra por POS/QR igual que Yape, así
-  // que se suma a la fila de Yape para que el desglose siga cuadrando con el
-  // efectivo a entregar (que ya descuenta TODO el pago electrónico).
+  // "Visa Yape Culqui" va en su propia fila (insertada tras YAPE).
   const culqui = r2(sumaPagos("culqui"));
   setSoles(`L${mapRow(58)}`, visas);
-  setSoles(`L${mapRow(59)}`, r2(yapes + culqui));
+  setSoles(`L${mapRow(59)}`, yapes);
+  ws.getCell(`B${filaYapeCulqui}`).value = "YAPE CULQUI";
+  setSoles(`L${filaYapeCulqui}`, culqui);
   setSoles(`L${mapRow(60)}`, transferencias);
   const totalDeducciones = r2(
     rep.totalDescuentos + rep.totalGastos + visas + yapes + culqui + transferencias
@@ -250,22 +288,39 @@ export function llenarHojaMadre(
   }
 
   // exceljs.duplicateRow descarta los rangos combinados (mergeCells) que
-  // quedan por debajo del punto de inserción. Al haber overflow, el "TOTAL"
-  // combinado A:C se rompía y se veía repetido 3 veces. Se vuelven a aplicar
-  // en su posición final.
-  if (extraDescuentos + extraCreditos + extraPromos > 0) {
-    const remerge = (desde: string, hasta: string) => {
-      try {
-        ws.unMergeCells(`${desde}:${hasta}`);
-      } catch {
-        /* no estaba combinado */
-      }
+  // quedan por debajo del punto de inserción. Como SIEMPRE se inserta la fila
+  // YAPE CULQUI (más el posible overflow), el "TOTAL" combinado A:C y los de
+  // TELEMEDICION se rompen; se vuelven a aplicar en su posición final.
+  const remerge = (desde: string, hasta: string) => {
+    try {
+      ws.unMergeCells(`${desde}:${hasta}`);
+    } catch {
+      /* no estaba combinado */
+    }
+    try {
       ws.mergeCells(`${desde}:${hasta}`);
-    };
-    remerge(`A${mapRow(61)}`, `C${mapRow(61)}`); // TOTAL deducciones
-    remerge(`B${mapRow(68)}`, `C${mapRow(68)}`); // TELEMEDICION
-    remerge(`E${mapRow(68)}`, `F${mapRow(68)}`);
-  }
+    } catch {
+      /* ya estaba combinado en su posición correcta */
+    }
+  };
+  // exceljs NO desplaza estos merges al insertar filas: deja una copia
+  // "fantasma" en la posición ORIGINAL de la plantilla. Si cae sobre una fila
+  // de etiqueta (p. ej. GASTOS) oculta su texto, porque una celda combinada
+  // solo muestra el valor de su esquina superior-izquierda. Se quitan de su
+  // posición original antes de re-aplicarlas en la posición final.
+  const desmerge = (rango: string) => {
+    try {
+      ws.unMergeCells(rango);
+    } catch {
+      /* no estaba combinado */
+    }
+  };
+  desmerge("A61:C61"); // TOTAL deducciones (original)
+  desmerge("B68:C68"); // TELEMEDICION (original)
+  desmerge("E68:F68");
+  remerge(`A${mapRow(61)}`, `C${mapRow(61)}`); // TOTAL deducciones
+  remerge(`B${mapRow(68)}`, `C${mapRow(68)}`); // TELEMEDICION
+  remerge(`E${mapRow(68)}`, `F${mapRow(68)}`);
 
   // Altura uniforme de 14.5 para todas las filas con contenido.
   for (let i = 1; i <= ws.rowCount; i++) {
@@ -439,7 +494,7 @@ export function llenarHojaIsla(
     const p = f.dato as Sesion["pagos"][number];
     ws.getCell(`A${rr}`).value = f.isla.nombre;
     ws.getCell(`B${rr}`).value = f.sesion.trabajador;
-    ws.getCell(`C${rr}`).value = p.metodo.toUpperCase();
+    ws.getCell(`C${rr}`).value = METODO_LABEL[p.metodo] ?? p.metodo.toUpperCase();
     ws.getCell(`D${rr}`).value = p.referencia || "";
     ws.getCell(`E${rr}`).value = p.monto;
     ws.getCell(`F${rr}`).value = p.factura || "";

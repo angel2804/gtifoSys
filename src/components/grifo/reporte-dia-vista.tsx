@@ -269,7 +269,7 @@ export function ReporteDiaVista({
       titulo: "Adelantos",
       n: filtradas.reduce((a, s) => a + s.adelantos.length, 0),
       total: rep.totalAdelantos,
-      grupos: grupos("adelantos", () => colsAdelanto(sugClientes) as unknown as Col<RowAny>[]),
+      grupos: grupos("adelantos", () => colsAdelanto() as unknown as Col<RowAny>[]),
       nuevo: nuevoRowAny(() => nuevoAdelanto()),
       validar: validarRowAny(validarAdelanto),
     },
