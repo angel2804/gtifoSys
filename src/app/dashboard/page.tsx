@@ -234,7 +234,7 @@ export default function DashboardPage() {
                         </TableCell>
                         <TableCell>
                           <Input
-                            className="h-7 w-20 text-xs font-medium"
+                            className="h-9 w-32 text-sm font-semibold tabular-nums"
                             type="number"
                             value={o?.entrada || ""}
                             onWheel={(e) => e.currentTarget.blur()}
@@ -245,7 +245,7 @@ export default function DashboardPage() {
                         </TableCell>
                         <TableCell>
                           <Input
-                            className="h-7 w-20 text-xs font-medium"
+                            className="h-9 w-32 text-sm font-semibold tabular-nums"
                             type="number"
                             value={o?.salida || ""}
                             onWheel={(e) => e.currentTarget.blur()}
