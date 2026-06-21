@@ -456,30 +456,31 @@ export const useStore = create<StoreState>()(
     }),
     {
       name: "grifo-sys",
-      version: 5,
-      // Los datos de los turnos (`sesiones`) NO se guardan en localStorage:
-      // siempre se traen frescos de Supabase al abrir. Así un reset de base
-      // hecho desde otro equipo no deja un turno "zombie" pegado en el caché
-      // local. En cambio SÍ se conserva `currentSesionId` (solo un id) para
-      // que al recargar el trabajador vuelva automáticamente a su turno
-      // abierto, como funcionaba antes; si ese turno ya no existe en Supabase
-      // (fue reseteado), simplemente no habrá sesión activa y se vuelve al
-      // setup, sin mostrar datos viejos.
+      version: 6,
+      // Los turnos (`sesiones`) y la lista de clientes (`clientes`) NO se
+      // guardan en localStorage: siempre se traen frescos de Supabase al
+      // abrir. Así un reset/edición hecho desde otro equipo no deja datos
+      // "zombie" pegados en el caché local (p. ej. clientes ya borrados que
+      // reaparecían en otra PC). En cambio SÍ se conserva `currentSesionId`
+      // (solo un id) para que al recargar el trabajador vuelva automáticamente
+      // a su turno abierto; si ese turno ya no existe en Supabase, no habrá
+      // sesión activa y se vuelve al setup, sin mostrar datos viejos.
       partialize: (state) => {
-        const { sesiones, ...resto } = state;
+        const { sesiones, clientes, ...resto } = state;
         void sesiones;
+        void clientes;
         return resto as StoreState;
       },
       migrate: (persisted) => {
         const state = persisted as StoreState;
-        // v5: los turnos ya no se cachean en localStorage. Se descartan los
-        // que hubiera guardado una versión anterior (evita turnos "zombie")
-        // y se traerán frescos de Supabase.
+        // v5: los turnos ya no se cachean. v6: tampoco los clientes. Se
+        // descartan los que hubiera guardado una versión anterior (evita
+        // datos "zombie") y se traerán frescos de Supabase.
         state.sesiones = [];
         state.currentSesionId = null;
+        state.clientes = [];
         if (!state.precios) state.precios = { ...PRECIOS_DEFAULT };
         if (!state.trabajadores) state.trabajadores = [...TRABAJADORES_DEFAULT];
-        if (!state.clientes) state.clientes = [];
         if (!state.admins) state.admins = [];
         if (state.logo === undefined) state.logo = null;
         return state;

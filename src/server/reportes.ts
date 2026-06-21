@@ -18,7 +18,7 @@ const METODO_LABEL: Record<MetodoPago, string> = {
   yape: "YAPE",
   transferencia: "TRANSFERENCIA",
   visa: "VISA",
-  culqui: "YAPE CULQUI",
+  culqui: "VISA YQ",
 };
 const EPS = 0.01;
 
@@ -259,7 +259,7 @@ export function llenarHojaMadre(
   const culqui = r2(sumaPagos("culqui"));
   setSoles(`L${mapRow(58)}`, visas);
   setSoles(`L${mapRow(59)}`, yapes);
-  ws.getCell(`B${filaYapeCulqui}`).value = "YAPE CULQUI";
+  ws.getCell(`B${filaYapeCulqui}`).value = "VISA YQ";
   setSoles(`L${filaYapeCulqui}`, culqui);
   setSoles(`L${mapRow(60)}`, transferencias);
   const totalDeducciones = r2(

@@ -106,7 +106,11 @@ export function RegistroModal<T extends { id: string }>({
                           }
                         >
                           <SelectTrigger className="h-7 w-full min-w-24 text-xs">
-                            <SelectValue />
+                            <SelectValue>
+                              {(val: string) =>
+                                c.options?.find((o) => o.value === val)?.label ?? val
+                              }
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             {c.options?.map((o) => (

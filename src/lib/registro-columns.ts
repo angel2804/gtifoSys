@@ -23,7 +23,7 @@ export const METODO_PAGO_OPTIONS = [
   { value: "yape", label: "Yape" },
   { value: "transferencia", label: "Transferencia" },
   { value: "visa", label: "Visa" },
-  { value: "culqui", label: "Visa Yape Culqui" },
+  { value: "culqui", label: "VISA YQ" },
 ] as const;
 
 export const BALON_TIPO_OPTIONS = [

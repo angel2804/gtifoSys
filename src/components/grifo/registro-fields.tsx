@@ -96,7 +96,15 @@ export function RegistroAddForm<T extends { id: string }>({
               onValueChange={(v) => setField(c.key, v)}
             >
               <SelectTrigger className={`${h} w-full text-xs`}>
-                <SelectValue placeholder={dense ? c.label : "—"} />
+                <SelectValue placeholder={dense ? c.label : "—"}>
+                  {(val: string) =>
+                    !val
+                      ? dense
+                        ? c.label
+                        : "—"
+                      : c.options?.find((o) => o.value === val)?.label ?? val
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {c.options?.map((o) => (
