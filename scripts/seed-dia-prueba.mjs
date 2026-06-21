@@ -139,6 +139,8 @@ function construirSesion(isla, turno, turnoIdx) {
     totalGastos + totalAdelantos + totalBalones
   );
   const entregas = [{ id: randomUUID(), hora: "14:00", monto: efectivo }];
+  // Conteo físico del admin: por defecto cuadra con lo entregado.
+  const conteos = [{ id: randomUUID(), monto: efectivo }];
 
   const ts = baseTs + turnoIdx * 8 * 3600 * 1000;
   return {
@@ -149,7 +151,7 @@ function construirSesion(isla, turno, turnoIdx) {
     turno,
     precios: PRECIOS,
     odometros: od,
-    pagos, creditos, promociones, descuentos, gastos, adelantos, entregas, balones,
+    pagos, creditos, promociones, descuentos, gastos, adelantos, entregas, conteos, balones,
     cerrada: true,
     createdAt: ts,
     diaOperativo: dia,

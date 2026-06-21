@@ -37,6 +37,7 @@ function sesionBase(overrides: Partial<Sesion> = {}): Sesion {
     gastos: [],
     adelantos: [],
     entregas: [],
+    conteos: [],
     balones: [],
     cerrada: false,
     createdAt: Date.now(),
@@ -131,6 +132,42 @@ describe("calcularCuadre", () => {
     });
     const c = calcularCuadre(s, PRECIOS_DEFAULT);
     expect(c.saldoPendiente).toBeCloseTo(c.efectivoAEntregar - 5);
+  });
+});
+
+describe("precio por turno (tramos)", () => {
+  it("calcularCuadre usa el precio snapshot de la sesión, no el global", () => {
+    const s = sesionBase({
+      odometros: { ...sesionBase().odometros, i1_reg1: { entrada: 0, salida: 10 } },
+      precios: { ...PRECIOS_DEFAULT, regular: 20 },
+    });
+    // Global regular = 16, pero la sesión congeló 20: manda el de la sesión.
+    const c = calcularCuadre(s, PRECIOS_DEFAULT);
+    expect(c.ventaTotal).toBeCloseTo(10 * 20);
+  });
+
+  it("el reporte del día parte el odómetro en tramos cuando cambia el precio a las 2pm", () => {
+    const base = sesionBase();
+    const manana = sesionBase({
+      id: "2026-01-01_isla1_manana",
+      turno: "manana",
+      cerrada: true,
+      odometros: { ...base.odometros, i1_reg1: { entrada: 0, salida: 100 } },
+      precios: { ...PRECIOS_DEFAULT, regular: 16 },
+    });
+    const tarde = sesionBase({
+      id: "2026-01-01_isla1_tarde",
+      turno: "tarde",
+      cerrada: true,
+      odometros: { ...base.odometros, i1_reg1: { entrada: 100, salida: 250 } },
+      precios: { ...PRECIOS_DEFAULT, regular: 20 },
+    });
+    const rep = calcularReporteDia([manana, tarde], "2026-01-01", PRECIOS_DEFAULT);
+    const regular = rep.porProducto.find((f) => f.producto === "regular")!;
+    // Galones del día siguen siendo continuos (100 + 150).
+    expect(regular.galones).toBeCloseTo(250);
+    // Pero la venta se parte: 100 gal a 16 + 150 gal a 20.
+    expect(regular.venta).toBeCloseTo(100 * 16 + 150 * 20);
   });
 });
 

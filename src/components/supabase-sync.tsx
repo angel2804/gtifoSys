@@ -5,12 +5,13 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { diaMenos, diaOperativoActual } from "@/lib/calc";
 import {
+  addClientesRemoto,
   fetchSesionesDesde,
-  setClientesRemoto,
   subscribeConfig,
   subscribeSesiones,
   upsertSesion,
 } from "@/lib/db";
+import { normalizarCliente } from "@/lib/clientes";
 import { supabaseHabilitado } from "@/lib/supabase";
 import type { Admin, Precios, Sesion } from "@/lib/types";
 
@@ -74,18 +75,30 @@ export function SupabaseSync() {
     });
   }, [setClientes]);
 
-  // Sube a Supabase la lista de clientes cuando crece localmente (debounced).
+  // Sube a Supabase SOLO los clientes nuevos que se aprenden localmente
+  // (debounced y de forma ADITIVA). Antes subía la lista COMPLETA en cada
+  // cambio: si este dispositivo tenía un cliente que el admin ya había
+  // eliminado, lo volvía a subir y "resucitaba". Ahora solo se envían los
+  // nombres que NO estaban antes; las eliminaciones las maneja el admin (su
+  // escritura autoritativa) y nunca se pisan.
   useEffect(() => {
     if (!supabaseHabilitado) return;
-    let ultimoJson = JSON.stringify(useStore.getState().clientes);
+    let prev = useStore.getState().clientes;
+    let buffer: string[] = [];
     let timer: ReturnType<typeof setTimeout> | null = null;
     const unsub = useStore.subscribe(() => {
-      const json = JSON.stringify(useStore.getState().clientes);
-      if (json === ultimoJson) return;
-      ultimoJson = json;
+      const curr = useStore.getState().clientes;
+      if (curr === prev) return;
+      const vistos = new Set(prev.map(normalizarCliente));
+      const nuevos = curr.filter((c) => !vistos.has(normalizarCliente(c)));
+      prev = curr;
+      if (nuevos.length === 0) return; // solo se quitaron clientes: no subir nada
+      buffer.push(...nuevos);
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        setClientesRemoto(useStore.getState().clientes).catch(() => {});
+        const aSubir = buffer;
+        buffer = [];
+        addClientesRemoto(aSubir).catch(() => {});
       }, 1000);
     });
     return () => {

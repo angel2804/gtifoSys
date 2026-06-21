@@ -29,7 +29,7 @@ import {
 } from "@/lib/config";
 import { backupSiTurnoCompleto, upsertSesion } from "@/lib/db";
 import { useStore } from "@/lib/store";
-import { calcularCuadre, soles } from "@/lib/calc";
+import { calcularCuadre, preciosDe, soles } from "@/lib/calc";
 import { clientesOrdenados } from "@/lib/clientes";
 import type {
   Adelanto,
@@ -55,6 +55,8 @@ import {
   colsEntrega,
   colsGasto,
   colsPago,
+  resumenPagos,
+  resumenPorProducto,
   colsPromo,
   nuevoAdelanto,
   nuevoBalon,
@@ -107,7 +109,10 @@ export default function DashboardPage() {
 
   if (!hydrated || !auth || !sesion || !isla) return null;
 
-  const precio = (p: ProductoId) => precios[p] ?? 0;
+  // Precio EFECTIVO del turno: usa el snapshot congelado al abrir la sesión
+  // (cae al global). Así, si el admin cambia el precio global a las 2pm, este
+  // turno conserva el suyo y no se descuadra en vivo.
+  const precio = (p: ProductoId) => preciosDe(sesion, precios)[p] ?? 0;
   // Encoge la fuente del odómetro según los dígitos para que el número
   // completo siempre quepa dentro del input (ej. 987654.321).
   const odoText = (v: number | undefined) => {
@@ -390,7 +395,7 @@ export default function DashboardPage() {
                 columns={colsPago()}
                 onUpdate={store.updatePago}
                 onRemove={store.removePago}
-                resumen={(r) => `Total: ${soles(totalMonto(r))}`}
+                resumen={(r) => resumenPagos(r)}
                 trigger={<TablaBtn icon="💳" label="Pagos" n={sesion.pagos.length} />}
               />
               <RegistroModal<Credito>
@@ -401,9 +406,13 @@ export default function DashboardPage() {
                 onUpdate={store.updateCredito}
                 onRemove={store.removeCredito}
                 resumen={(r) =>
-                  `Total: ${soles(
-                    r.reduce((a, x) => a + x.galones * precio(x.producto), 0)
-                  )}`
+                  resumenPorProducto(
+                    r.map((x) => ({
+                      producto: x.producto,
+                      galones: x.galones,
+                      precio: precio(x.producto),
+                    }))
+                  )
                 }
                 trigger={
                   <TablaBtn icon="📒" label="Créditos" n={sesion.creditos.length} />
@@ -417,9 +426,13 @@ export default function DashboardPage() {
                 onUpdate={store.updatePromocion}
                 onRemove={store.removePromocion}
                 resumen={(r) =>
-                  `Total: ${soles(
-                    r.reduce((a, x) => a + x.galones * precio(x.producto), 0)
-                  )}`
+                  resumenPorProducto(
+                    r.map((x) => ({
+                      producto: x.producto,
+                      galones: x.galones,
+                      precio: precio(x.producto),
+                    }))
+                  )
                 }
                 trigger={
                   <TablaBtn icon="🎁" label="Promos" n={sesion.promociones.length} />

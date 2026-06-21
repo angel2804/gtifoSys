@@ -24,16 +24,17 @@ import {
   PRODUCTO_COLOR,
   TURNOS,
 } from "@/lib/config";
-import { calcularReporteDia, soles } from "@/lib/calc";
+import { calcularReporteDia, preciosDe, soles } from "@/lib/calc";
 import { clientesOrdenados } from "@/lib/clientes";
 import { useStore } from "@/lib/store";
-import type { Precios, ProductoId, Sesion, TurnoId } from "@/lib/types";
+import type { PagoElectronico, Precios, ProductoId, Sesion, TurnoId } from "@/lib/types";
 import type { Col } from "./registro-fields";
 import { ReporteRegistroModal, type Grupo } from "./reporte-registro-modal";
 import { cn } from "@/lib/utils";
 import {
   colsAdelanto,
   colsBalon,
+  colsConteo,
   colsCredito,
   colsDescuento,
   colsEntrega,
@@ -42,14 +43,18 @@ import {
   colsPromo,
   nuevoAdelanto,
   nuevoBalon,
+  nuevoConteo,
   nuevoCredito,
   nuevoDescuento,
   nuevoEntrega,
   nuevoGasto,
   nuevoPago,
   nuevoPromo,
+  resumenPagos,
+  resumenPorProducto,
   validarAdelanto,
   validarBalon,
+  validarConteo,
   validarCredito,
   validarDescuento,
   validarEntrega,
@@ -66,6 +71,7 @@ type Tipo =
   | "gastos"
   | "adelantos"
   | "entregas"
+  | "conteos"
   | "balones";
 
 interface Props {
@@ -89,6 +95,9 @@ interface Props {
     mangueraId: string,
     patch: { entrada?: number; salida?: number }
   ) => void;
+  // El admin corrige el precio de un turno (p. ej. cambio de las 2pm o un
+  // tipeo). Reemplaza el snapshot de precios de esa sesión.
+  onSetPreciosSesion: (sesionId: string, precios: Precios) => void;
 }
 
 function productoOpts(s: Sesion) {
@@ -106,6 +115,7 @@ export function ReporteDiaVista({
   onRemoveRegistro,
   onAddRegistro,
   onUpdateOdometro,
+  onSetPreciosSesion,
 }: Props) {
   // Turno específico (mañana/tarde/noche) o "general" (todo el día). Isla opcional.
   const [filtroTurno, setFiltroTurno] = useState<string>("manana");
@@ -113,6 +123,9 @@ export function ReporteDiaVista({
   const esGeneral = filtroTurno === "general";
 
   const precio = (p: ProductoId) => precios[p] ?? 0;
+  // Precio EFECTIVO de un turno (snapshot de la sesión con fallback al global).
+  const preciosSes = (s: Sesion) => preciosDe(s, precios);
+  const precioSesFn = (s: Sesion) => (p: ProductoId) => preciosSes(s)[p] ?? 0;
   const sugClientes = clientesOrdenados(useStore((s) => s.clientes));
 
   // Sesiones del turno (o de todos los turnos si general), filtradas por isla
@@ -142,7 +155,10 @@ export function ReporteDiaVista({
           const inicio = sMañana?.odometros[m.id]?.entrada ?? 0;
           const final = sNoche?.odometros[m.id]?.salida ?? 0;
           const galones = Math.max(0, final - inicio);
-          const pr = precio(m.producto);
+          // Precio representativo del día (turno más reciente); la SUMA usa el
+          // total por tramos (rep.ventaTotal), exacto aunque cambie a las 2pm.
+          const ref = sNoche ?? sMañana;
+          const pr = ref ? preciosSes(ref)[m.producto] ?? 0 : precio(m.producto);
           return {
             m,
             sesionInicio: sMañana,
@@ -162,7 +178,7 @@ export function ReporteDiaVista({
           const inicio = o?.entrada ?? 0;
           const final = o?.salida ?? 0;
           const galones = Math.max(0, final - inicio);
-          const pr = precio(m.producto);
+          const pr = s ? preciosSes(s)[m.producto] ?? 0 : precio(m.producto);
           return {
             m,
             sesionInicio: s,
@@ -182,6 +198,23 @@ export function ReporteDiaVista({
   }));
 
   const hayGlp = islasMostrar.some((i) => i.tipo === "glp");
+
+  // Precio editable por turno: todas las sesiones de ESTE turno (las 3 islas)
+  // comparten el precio; al editarlo se reemplaza el snapshot de cada una. Así
+  // el admin fija el precio nuevo de las 2pm en la tarde, o corrige un tipeo.
+  const sesionesTurno = esGeneral
+    ? []
+    : delDia.filter((s) => s.turno === filtroTurno);
+  const productosTurno = Array.from(
+    new Set(islasMostrar.flatMap((i) => i.productos))
+  );
+  const precioTurno = (p: ProductoId) =>
+    sesionesTurno[0] ? preciosSes(sesionesTurno[0])[p] ?? 0 : precio(p);
+  const setPrecioTurno = (p: ProductoId, v: number) => {
+    sesionesTurno.forEach((s) =>
+      onSetPreciosSesion(s.id, { ...preciosSes(s), [p]: v })
+    );
+  };
 
   // Columnas por tipo (precio global), delegadas al módulo compartido con
   // dashboard/page.tsx (src/lib/registro-columns.ts).
@@ -203,6 +236,23 @@ export function ReporteDiaVista({
     (r: Omit<RowAny, "id">) =>
       fn(r as unknown as Omit<A, "id">);
 
+  // Cuadre de efectivo por trabajador: lo que CADA encargado entregó (entregas
+  // que él mismo registró) vs lo que el ADMIN contó en físico (conteos). La
+  // diferencia ideal es 0; positiva = sobrante, negativa = faltante.
+  const filasEncargado = filtradas.map((s) => {
+    const entregado = (s.entregas ?? []).reduce((a, e) => a + e.monto, 0);
+    const contado = (s.conteos ?? []).reduce((a, c) => a + c.monto, 0);
+    return {
+      sesion: s,
+      islaNombre: getIsla(s.islaId)?.nombre ?? s.islaId,
+      entregado,
+      contado,
+      diferencia: contado - entregado,
+    };
+  });
+  const totalContado = filasEncargado.reduce((a, f) => a + f.contado, 0);
+  const diferenciaTotal = totalContado - rep.totalEntregado;
+
   const cards = [
     {
       tipo: "pagos" as Tipo,
@@ -213,6 +263,8 @@ export function ReporteDiaVista({
       grupos: grupos("pagos", () => colsPago() as unknown as Col<RowAny>[]),
       nuevo: nuevoRowAny(() => nuevoPago()),
       validar: validarRowAny(validarPago),
+      resumen: (rows: RowAny[]) =>
+        resumenPagos(rows as unknown as PagoElectronico[]),
     },
     {
       tipo: "creditos" as Tipo,
@@ -222,10 +274,20 @@ export function ReporteDiaVista({
       total: rep.totalCreditos,
       grupos: grupos(
         "creditos",
-        (s) => colsCredito(productoOpts(s), precio, sugClientes) as unknown as Col<RowAny>[]
+        (s) => colsCredito(productoOpts(s), precioSesFn(s), sugClientes) as unknown as Col<RowAny>[]
       ),
       nuevo: nuevoRowAny((s) => nuevoCredito(productoOpts(s)[0]?.value ?? "bio")),
       validar: validarRowAny(validarCredito),
+      resumen: () =>
+        resumenPorProducto(
+          filtradas.flatMap((s) =>
+            s.creditos.map((c) => ({
+              producto: c.producto,
+              galones: c.galones,
+              precio: preciosSes(s)[c.producto] ?? 0,
+            }))
+          )
+        ),
     },
     {
       tipo: "promociones" as Tipo,
@@ -235,10 +297,20 @@ export function ReporteDiaVista({
       total: rep.totalPromociones,
       grupos: grupos(
         "promociones",
-        (s) => colsPromo(productoOpts(s), precio) as unknown as Col<RowAny>[]
+        (s) => colsPromo(productoOpts(s), precioSesFn(s)) as unknown as Col<RowAny>[]
       ),
       nuevo: nuevoRowAny((s) => nuevoPromo(productoOpts(s)[0]?.value ?? "bio")),
       validar: validarRowAny(validarPromo),
+      resumen: () =>
+        resumenPorProducto(
+          filtradas.flatMap((s) =>
+            s.promociones.map((p) => ({
+              producto: p.producto,
+              galones: p.galones,
+              precio: preciosSes(s)[p.producto] ?? 0,
+            }))
+          )
+        ),
     },
     {
       tipo: "descuentos" as Tipo,
@@ -248,7 +320,7 @@ export function ReporteDiaVista({
       total: rep.totalDescuentos,
       grupos: grupos(
         "descuentos",
-        (s) => colsDescuento(productoOpts(s), precio, sugClientes) as unknown as Col<RowAny>[]
+        (s) => colsDescuento(productoOpts(s), precioSesFn(s), sugClientes) as unknown as Col<RowAny>[]
       ),
       nuevo: nuevoRowAny((s) => nuevoDescuento(productoOpts(s)[0]?.value ?? "bio")),
       validar: validarRowAny(validarDescuento),
@@ -283,6 +355,16 @@ export function ReporteDiaVista({
       nuevo: nuevoRowAny(() => nuevoEntrega()),
       validar: validarRowAny(validarEntrega),
     },
+    {
+      tipo: "conteos" as Tipo,
+      icon: "🧮",
+      titulo: "Efectivo contado",
+      n: filtradas.reduce((a, s) => a + (s.conteos?.length ?? 0), 0),
+      total: totalContado,
+      grupos: grupos("conteos", () => colsConteo() as unknown as Col<RowAny>[]),
+      nuevo: nuevoRowAny(() => nuevoConteo()),
+      validar: validarRowAny(validarConteo),
+    },
     ...(hayGlp
       ? [
           {
@@ -291,7 +373,7 @@ export function ReporteDiaVista({
             titulo: "Balones",
             n: filtradas.reduce((a, s) => a + (s.balones?.length ?? 0), 0),
             total: rep.totalBalones,
-            grupos: grupos("balones", () => colsBalon(precios) as unknown as Col<RowAny>[]),
+            grupos: grupos("balones", (s) => colsBalon(preciosSes(s)) as unknown as Col<RowAny>[]),
             nuevo: nuevoRowAny(() => nuevoBalon()),
             validar: validarRowAny(validarBalon),
           },
@@ -355,6 +437,29 @@ export function ReporteDiaVista({
           </span>
         ))}
       </div>
+      )}
+
+      {/* Precio por turno (editable): por defecto hereda el global; el admin lo
+          ajusta para el cambio de las 2pm o para corregir un tipeo. */}
+      {!esGeneral && sesionesTurno.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-2 shadow-sm">
+          <span className="text-[11px] font-bold text-muted-foreground">
+            PRECIO DE ESTE TURNO:
+          </span>
+          {productosTurno.map((p) => (
+            <label key={p} className="flex items-center gap-1.5 text-[11px]">
+              <span className="font-semibold">{PRODUCTOS[p]}</span>
+              <Input
+                className="h-7 w-20 text-right text-sm tabular-nums"
+                type="number"
+                step="0.01"
+                value={precioTurno(p) || ""}
+                onWheel={(e) => e.currentTarget.blur()}
+                onChange={(e) => setPrecioTurno(p, Number(e.target.value))}
+              />
+            </label>
+          ))}
+        </div>
       )}
 
       {/* Odómetros */}
@@ -422,7 +527,7 @@ export function ReporteDiaVista({
                       <TableCell className="text-center text-red-500">—</TableCell>
                     )}
                     <TableCell className="text-right font-medium">
-                      {f.galones.toFixed(0)}
+                      {f.galones.toFixed(3)}
                     </TableCell>
                     <TableCell className="text-right">{soles(f.precio)}</TableCell>
                     <TableCell className="text-right font-semibold">{soles(f.soles)}</TableCell>
@@ -440,6 +545,26 @@ export function ReporteDiaVista({
         </div>
       </div>
 
+      {/* Galones vendidos por producto (bio, regular, premium, glp) */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-2 shadow-sm">
+        <span className="text-[11px] font-bold text-muted-foreground">
+          GALONES VENDIDOS:
+        </span>
+        {rep.porProducto.map((f) => (
+          <span key={f.producto} className="flex items-center gap-1.5 text-[11px]">
+            <span
+              className={cn(
+                "rounded px-1.5 py-0.5 font-semibold",
+                PRODUCTO_COLOR[f.producto]
+              )}
+            >
+              {PRODUCTOS[f.producto]}
+            </span>
+            <b className="tabular-nums">{f.galones.toFixed(3)}</b>
+          </span>
+        ))}
+      </div>
+
       {/* Tarjetas */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {cards.map((c) => (
@@ -453,6 +578,7 @@ export function ReporteDiaVista({
             onRemove={(sid, rid) => onRemoveRegistro(sid, c.tipo, rid)}
             nuevo={c.nuevo}
             validar={c.validar}
+            resumen={(c as { resumen?: (r: RowAny[]) => string }).resumen}
             onAdd={(sid, row) => onAddRegistro(sid, c.tipo, row as Record<string, unknown>)}
             trigger={
               <button className="rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent">
@@ -469,37 +595,152 @@ export function ReporteDiaVista({
         ))}
       </div>
 
-      {/* Cuadre */}
-      <div className="rounded-xl border bg-card p-4 shadow-sm">
-        <div className="space-y-0.5">
-          <Fila label="Venta total" valor={soles(rep.ventaTotal)} bold />
-          <Fila label="− Créditos" valor={soles(rep.totalCreditos)} neg />
-          <Fila label="− Promociones" valor={soles(rep.totalPromociones)} neg />
-          <Fila label="− Descuentos" valor={soles(rep.totalDescuentos)} neg />
-          <Fila label="− Pagos electrónicos" valor={soles(rep.totalElectronico)} neg />
-          <Fila label="− Gastos" valor={soles(rep.totalGastos)} neg />
-          <Fila label="+ Pago adelantado" valor={soles(rep.totalAdelantos)} pos />
-          {hayGlp && (
-            <Fila label="+ Balones de gas" valor={soles(rep.totalBalones)} pos />
-          )}
+      {/* Cuadre en dos mitades: izquierda = venta y deducciones; derecha =
+          efectivo entregado por cada trabajador vs lo contado por el admin. */}
+      <div className="grid gap-2 md:grid-cols-2">
+        {/* Mitad izquierda: venta total y deducciones */}
+        <div className="rounded-xl border bg-card p-4 shadow-sm">
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+            Venta y deducciones
+          </div>
+          <div className="space-y-0.5">
+            <Fila label="Venta total" valor={soles(rep.ventaTotal)} bold />
+            <Fila label="− Créditos" valor={soles(rep.totalCreditos)} neg />
+            <Fila label="− Promociones" valor={soles(rep.totalPromociones)} neg />
+            <Fila label="− Descuentos" valor={soles(rep.totalDescuentos)} neg />
+            <Fila label="− Pagos electrónicos" valor={soles(rep.totalElectronico)} neg />
+            <Fila label="− Gastos" valor={soles(rep.totalGastos)} neg />
+            <Fila label="+ Pago adelantado" valor={soles(rep.totalAdelantos)} pos />
+            {hayGlp && (
+              <Fila label="+ Balones de gas" valor={soles(rep.totalBalones)} pos />
+            )}
+          </div>
+          <div className="mt-2 flex items-center justify-between rounded-lg bg-primary/10 px-3 py-2">
+            <span className="text-sm font-semibold">Efectivo a entregar</span>
+            <span className="text-lg font-bold text-primary">
+              {soles(rep.efectivoAEntregar)}
+            </span>
+          </div>
         </div>
-        <div className="my-2 flex items-center justify-between rounded-lg bg-primary/10 px-3 py-2">
-          <span className="text-sm font-semibold">Efectivo a entregar</span>
-          <span className="text-lg font-bold text-primary">
-            {soles(rep.efectivoAEntregar)}
-          </span>
-        </div>
-        <Fila label="Entregado al encargado" valor={soles(rep.totalEntregado)} />
-        <div className="mt-1 flex items-center justify-between rounded-lg bg-amber-500/15 px-3 py-2">
-          <span className="text-sm font-semibold">Saldo pendiente</span>
-          <span
+
+        {/* Mitad derecha: entregas por trabajador y conteo físico del admin */}
+        <div className="rounded-xl border bg-card p-4 shadow-sm">
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+            Entregas vs efectivo contado
+          </div>
+          <div className="overflow-hidden rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="h-7 px-2 font-bold">Trabajador</TableHead>
+                  <TableHead className="h-7 px-2 text-right font-bold">Entregó</TableHead>
+                  <TableHead className="h-7 px-2 text-right font-bold">Contado</TableHead>
+                  <TableHead className="h-7 px-2 text-right font-bold">Dif.</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filasEncargado.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="px-2 py-4 text-center text-muted-foreground">
+                      Sin trabajadores en este turno
+                    </TableCell>
+                  </TableRow>
+                )}
+                {filasEncargado.map((f) => (
+                  <TableRow key={f.sesion.id}>
+                    <TableCell className="px-2 py-1">
+                      <div className="font-semibold">{f.sesion.trabajador}</div>
+                      <div className="text-[10px] text-muted-foreground">{f.islaNombre}</div>
+                    </TableCell>
+                    <TableCell className="px-2 py-1 text-right tabular-nums">
+                      {soles(f.entregado)}
+                    </TableCell>
+                    <TableCell className="px-2 py-1 text-right tabular-nums">
+                      {soles(f.contado)}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        "px-2 py-1 text-right font-semibold tabular-nums",
+                        Math.abs(f.diferencia) < 0.005
+                          ? "text-green-600"
+                          : f.diferencia > 0
+                            ? "text-sky-600"
+                            : "text-red-500"
+                      )}
+                    >
+                      {soles(f.diferencia)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                <TableRow className="bg-muted font-bold">
+                  <TableCell className="px-2 py-1 text-right">TOTAL</TableCell>
+                  <TableCell className="px-2 py-1 text-right tabular-nums">
+                    {soles(rep.totalEntregado)}
+                  </TableCell>
+                  <TableCell className="px-2 py-1 text-right tabular-nums">
+                    {soles(totalContado)}
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      "px-2 py-1 text-right tabular-nums",
+                      Math.abs(diferenciaTotal) < 0.005
+                        ? "text-green-600"
+                        : diferenciaTotal > 0
+                          ? "text-sky-600"
+                          : "text-red-500"
+                    )}
+                  >
+                    {soles(diferenciaTotal)}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Veredicto de la comparación contado (admin) vs entregado (sistema) */}
+          <div
             className={cn(
-              "text-lg font-bold",
-              rep.saldoPendiente > 0.001 ? "text-amber-600" : "text-green-600"
+              "mt-2 flex items-center justify-between rounded-lg px-3 py-2",
+              Math.abs(diferenciaTotal) < 0.005
+                ? "bg-green-500/15"
+                : diferenciaTotal > 0
+                  ? "bg-sky-500/15"
+                  : "bg-red-500/15"
             )}
           >
-            {soles(rep.saldoPendiente)}
-          </span>
+            <span className="text-sm font-semibold">
+              {Math.abs(diferenciaTotal) < 0.005
+                ? "Cuadra ✓"
+                : diferenciaTotal > 0
+                  ? "Sobrante (contado de más)"
+                  : "Faltante (contado de menos)"}
+            </span>
+            <span
+              className={cn(
+                "text-lg font-bold",
+                Math.abs(diferenciaTotal) < 0.005
+                  ? "text-green-600"
+                  : diferenciaTotal > 0
+                    ? "text-sky-600"
+                    : "text-red-500"
+              )}
+            >
+              {soles(Math.abs(diferenciaTotal))}
+            </span>
+          </div>
+
+          {/* Saldo pendiente: efectivo a entregar vs lo ya entregado al admin */}
+          <div className="mt-1 flex items-center justify-between rounded-lg bg-amber-500/15 px-3 py-2">
+            <span className="text-sm font-semibold">Saldo pendiente</span>
+            <span
+              className={cn(
+                "text-lg font-bold",
+                rep.saldoPendiente > 0.001 ? "text-amber-600" : "text-green-600"
+              )}
+            >
+              {soles(rep.saldoPendiente)}
+            </span>
+          </div>
         </div>
       </div>
     </div>

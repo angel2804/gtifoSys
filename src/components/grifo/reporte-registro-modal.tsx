@@ -51,6 +51,9 @@ interface Props<T extends { id: string }> {
   nuevo?: (sesion: Sesion) => Omit<T, "id">;
   validar?: (row: Omit<T, "id">) => string | null;
   onAdd?: (sesionId: string, row: Omit<T, "id">) => void;
+  // Pie con un resumen (p. ej. total de pagos desglosado por tipo). Recibe
+  // todas las filas del día (de todas las sesiones del filtro).
+  resumen?: (rows: T[]) => string;
 }
 
 export function ReporteRegistroModal<T extends { id: string }>({
@@ -62,6 +65,7 @@ export function ReporteRegistroModal<T extends { id: string }>({
   nuevo,
   validar,
   onAdd,
+  resumen,
 }: Props<T>) {
   const [open, setOpen] = useState(false);
   const [grupoIdx, setGrupoIdx] = useState(0);
@@ -314,6 +318,14 @@ export function ReporteRegistroModal<T extends { id: string }>({
             </TableBody>
           </Table>
         </div>
+
+        {resumen && filas.length > 0 && (
+          <div className="flex justify-end">
+            <span className="rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary">
+              {resumen(grupos.flatMap((g) => g.rows))}
+            </span>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

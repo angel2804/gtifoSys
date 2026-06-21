@@ -8,6 +8,7 @@
 //   tabla `config`:   key text pk, value jsonb  ('precios' | 'trabajadores')
 import { getSupabase } from "./supabase";
 import { diaOperativo, diaOperativoActual, turnoCompleto } from "./calc";
+import { aprenderClientes } from "./clientes";
 import type { Admin, Precios, Sesion, TurnoId } from "./types";
 
 export const dbHabilitado = () => getSupabase() != null;
@@ -183,8 +184,23 @@ export const setPreciosRemoto = (p: Precios) => setConfig("precios", p);
 export const setTrabajadoresRemoto = (nombres: string[]) =>
   setConfig("trabajadores", { nombres });
 // Lista de clientes (autocompletado de créditos/descuentos/adelantos).
+// Autoritativa: reemplaza la lista completa. La usa SOLO la gestión de
+// clientes del admin (agregar/eliminar), que es la fuente de verdad.
 export const setClientesRemoto = (nombres: string[]) =>
   setConfig("clientes", { nombres });
+
+// Agrega nombres a la lista remota de forma ADITIVA (lee, mezcla, escribe).
+// Nunca pisa la lista completa, así un cliente que el admin eliminó NO se
+// resucita cuando otro dispositivo (con su caché viejo) sube su lista. Solo
+// los nombres realmente nuevos llegan a Supabase.
+export async function addClientesRemoto(nombres: string[]): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const actual = (await getConfig<{ nombres: string[] }>("clientes"))?.nombres ?? [];
+  const merged = aprenderClientes(actual, nombres);
+  if (merged === actual) return; // ninguno era nuevo
+  await setConfig("clientes", { nombres: merged });
+}
 // Administradores (nombre + contraseña), gestionados por el desarrollador.
 export const setAdminsRemoto = (admins: Admin[]) =>
   setConfig("admins", { admins });

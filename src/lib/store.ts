@@ -25,7 +25,7 @@ import { diaActivoParaNuevosTurnos, diaOperativo } from "./calc";
 
 const TURNO_ORDEN: TurnoId[] = ["manana", "tarde", "noche"];
 // Versión del esquema de cada documento de sesión en Firestore.
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 export function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -235,6 +235,7 @@ export const useStore = create<StoreState>()(
           gastos: [],
           adelantos: [],
           entregas: [],
+          conteos: [],
           balones: [],
           cerrada: false,
           createdAt: ahora,

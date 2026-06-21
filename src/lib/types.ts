@@ -90,6 +90,15 @@ export interface Entrega {
   monto: number;
 }
 
+// Conteo físico de efectivo que hace el ADMIN al cerrar el día, por
+// trabajador. El trabajador se infiere de la sesión donde se registra (cada
+// isla×turno tiene un encargado). Se compara contra lo "entregado" (entregas
+// que registraron los propios trabajadores en el sistema).
+export interface Conteo {
+  id: string;
+  monto: number; // efectivo contado en físico para ese trabajador
+}
+
 export interface Balon {
   id: string;
   tipo: BalonTipo; // gasfull | zetagas
@@ -111,6 +120,7 @@ export interface Sesion {
   gastos: Gasto[];
   adelantos: Adelanto[];
   entregas: Entrega[];
+  conteos: Conteo[]; // conteo físico del admin por trabajador (cierre del día)
   balones: Balon[];
   cerrada: boolean;
   createdAt: number;

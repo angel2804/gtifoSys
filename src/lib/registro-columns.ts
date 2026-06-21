@@ -3,9 +3,11 @@
 // día). Antes estaban duplicadas casi línea por línea en ambos archivos.
 import type { Col } from "@/components/grifo/registro-fields";
 import { soles } from "./calc";
+import { PRODUCTOS } from "./config";
 import type {
   Adelanto,
   Balon,
+  Conteo,
   Credito,
   Descuento,
   Entrega,
@@ -45,12 +47,50 @@ export const nuevoPago = (): Omit<PagoElectronico, "id"> => ({
   factura: "",
   monto: 0,
 });
+// Resumen de pagos desglosado por tipo (Yape, Transferencia, Visa, VISA YQ)
+// más el total. Solo muestra los tipos con monto. Usado en el pie del modal de
+// pagos (turno del trabajador y reporte del admin).
+export function resumenPagos(rows: PagoElectronico[]): string {
+  const partes = METODO_PAGO_OPTIONS.map((m) => {
+    const t = rows
+      .filter((r) => r.metodo === m.value)
+      .reduce((a, r) => a + r.monto, 0);
+    return t > 0 ? `${m.label}: ${soles(t)}` : null;
+  }).filter(Boolean) as string[];
+  const total = rows.reduce((a, r) => a + r.monto, 0);
+  return [...partes, `Total: ${soles(total)}`].join("   ·   ");
+}
+
 export function validarPago(r: Omit<PagoElectronico, "id">): string | null {
   if (!r.metodo) return "Elige un tipo";
   if (!r.monto || r.monto <= 0) return "El monto es obligatorio";
   if ((r.metodo === "visa" || r.metodo === "transferencia") && !r.referencia)
     return "La referencia es obligatoria para Visa/Transferencia";
   return null;
+}
+
+// Resumen por producto (créditos / promos): galones, precio y total por cada
+// producto (bio, regular, premium, glp). El precio mostrado es el efectivo
+// (soles ÷ galones), que con un solo precio en el día equivale al precio normal.
+export function resumenPorProducto(
+  items: { producto: ProductoId; galones: number; precio: number }[]
+): string {
+  const map = new Map<ProductoId, { galones: number; soles: number }>();
+  for (const it of items) {
+    const e = map.get(it.producto) ?? { galones: 0, soles: 0 };
+    e.galones += it.galones;
+    e.soles += it.galones * it.precio;
+    map.set(it.producto, e);
+  }
+  const partes = Array.from(map.entries())
+    .filter(([, e]) => e.galones > 0)
+    .map(([p, e]) => {
+      const pu = e.galones > 0 ? e.soles / e.galones : 0;
+      return `${PRODUCTOS[p]}: ${e.galones.toFixed(3)} gal × ${soles(pu)} = ${soles(e.soles)}`;
+    });
+  const total = Array.from(map.values()).reduce((a, e) => a + e.soles, 0);
+  if (partes.length === 0) return `Total: ${soles(0)}`;
+  return [...partes, `Total: ${soles(total)}`].join("   ·   ");
 }
 
 export function colsCredito(
@@ -173,6 +213,15 @@ export function colsEntrega(): Col<Entrega>[] {
 }
 export const nuevoEntrega = (): Omit<Entrega, "id"> => ({ hora: "", monto: 0 });
 export const validarEntrega = (r: Omit<Entrega, "id">): string | null =>
+  !r.monto || r.monto <= 0 ? "El monto es obligatorio" : null;
+
+// Conteo físico del admin: el trabajador se elige con el selector de
+// "Encargado" del modal (la sesión), aquí solo se ingresa el monto contado.
+export function colsConteo(): Col<Conteo>[] {
+  return [{ key: "monto", label: "Monto contado", tipo: "number" }];
+}
+export const nuevoConteo = (): Omit<Conteo, "id"> => ({ monto: 0 });
+export const validarConteo = (r: Omit<Conteo, "id">): string | null =>
   !r.monto || r.monto <= 0 ? "El monto es obligatorio" : null;
 
 export function colsBalon(precios: Precios): Col<Balon>[] {

@@ -6,7 +6,7 @@
 // Extraído para que las hojas del reporte general salgan IDÉNTICAS a los
 // exports individuales (mismo código, sin duplicar).
 import ExcelJS from "exceljs";
-import { calcularReporteDia } from "@/lib/calc";
+import { calcularReporteDia, ORDEN_TURNO, preciosDe } from "@/lib/calc";
 import { ISLAS } from "@/lib/config";
 import type { MetodoPago, Precios, ProductoId, Sesion, TurnoId } from "@/lib/types";
 
@@ -60,7 +60,10 @@ export function llenarHojaMadre(
 ): void {
   const rep = calcularReporteDia(sesiones, dia, precios);
 
-  const descuentos = sesiones.flatMap((s) => s.descuentos);
+  // Cada descuento carga el precio normal de SU turno (para el ahorro/galón).
+  const descuentos = sesiones.flatMap((s) =>
+    s.descuentos.map((d) => ({ ...d, _precio: preciosDe(s, precios)[d.producto] ?? 0 }))
+  );
   const creditos = sesiones.flatMap((s) => s.creditos);
   const promociones = sesiones.flatMap((s) => s.promociones);
   const todosPagos = sesiones.flatMap((s) => s.pagos);
@@ -68,6 +71,38 @@ export function llenarHojaMadre(
 
   const galonesPorProducto = (p: ProductoId) =>
     rep.porProducto.find((f) => f.producto === p)?.galones ?? 0;
+  // Venta del producto valuada por TRAMOS de precio (correcta aunque el precio
+  // haya cambiado a media jornada). La toten = venta odómetro − créditos −
+  // promos, cada parte a su precio de turno.
+  const ventaOdometro = (p: ProductoId) =>
+    rep.porProducto.find((f) => f.producto === p)?.venta ?? 0;
+  const ventaCreditoPorProducto = (p: ProductoId) =>
+    sesiones.reduce(
+      (a, s) =>
+        a +
+        s.creditos
+          .filter((c) => c.producto === p)
+          .reduce((x, c) => x + c.galones * (preciosDe(s, precios)[p] ?? 0), 0),
+      0
+    );
+  const ventaPromoPorProducto = (p: ProductoId) =>
+    sesiones.reduce(
+      (a, s) =>
+        a +
+        s.promociones
+          .filter((x) => x.producto === p)
+          .reduce((y, x) => y + x.galones * (preciosDe(s, precios)[p] ?? 0), 0),
+      0
+    );
+  // Precio representativo a mostrar en celdas de PU: el del turno más reciente
+  // que vendió ese producto (tras un cambio a las 2pm, el precio nuevo).
+  const precioRep = (p: ProductoId): number => {
+    for (const t of [...ORDEN_TURNO].reverse()) {
+      const s = sesiones.find((x) => x.turno === t);
+      if (s) return preciosDe(s, precios)[p] ?? 0;
+    }
+    return precios[p] ?? 0;
+  };
   const galonesCreditoPorProducto = (p: ProductoId) =>
     creditos.filter((c) => c.producto === p).reduce((a, c) => a + c.galones, 0);
   const galonesPromoPorProducto = (p: ProductoId) =>
@@ -151,7 +186,7 @@ export function llenarHojaMadre(
   // --- Encabezado ---
   ws.getCell("B3").value = fechaTitulo(dia);
   for (const { producto, col } of PRODUCTO_COLS) {
-    setSoles(`${col}1`, precios[producto] ?? 0);
+    setSoles(`${col}1`, precioRep(producto));
     ws.getCell(`${col}2`).value = galonesPorProducto(producto);
   }
   ws.getCell("M2").value = rep.totalAdelantos || null;
@@ -161,7 +196,7 @@ export function llenarHojaMadre(
   for (const d of descuentos) {
     const grupo = PRODUCTO_COLS.find((g) => g.producto === d.producto);
     if (!grupo) continue;
-    const descuentoPorGalon = Math.max(0, (precios[d.producto] ?? 0) - d.precioDescuento);
+    const descuentoPorGalon = Math.max(0, d._precio - d.precioDescuento);
     ws.getCell(`B${r}`).value = d.cliente || "";
     ws.getCell(`${grupo.col}${r}`).value = d.galones;
     ws.getCell(`${grupo.puCol}${r}`).value = descuentoPorGalon;
@@ -208,10 +243,18 @@ export function llenarHojaMadre(
         galonesCreditoPorProducto(producto) -
         galonesPromoPorProducto(producto)
     );
-    const precioNormal = precios[producto] ?? 0;
-    const solesToten = glToten * precioNormal;
+    // Venta toten = venta del odómetro − créditos − promos, todo valuado por
+    // tramos de precio. El PU mostrado es el efectivo (soles/galón); cuando el
+    // precio no cambió en el día equivale al precio normal de siempre.
+    const solesToten = Math.max(
+      0,
+      ventaOdometro(producto) -
+        ventaCreditoPorProducto(producto) -
+        ventaPromoPorProducto(producto)
+    );
+    const puEfectivo = glToten > 0 ? solesToten / glToten : precioRep(producto);
     ws.getCell(`${col}${fila}`).value = glToten;
-    setSoles(`${puCol}${fila}`, precioNormal);
+    setSoles(`${puCol}${fila}`, puEfectivo);
     setSoles(`L${fila}`, r2(solesToten));
     totalVentaToten += solesToten;
   });
@@ -278,7 +321,7 @@ export function llenarHojaMadre(
 
   // --- Calibración: solo se reflejan los precios (lo único que existe en el sistema) ---
   for (const { producto, puCol } of PRODUCTO_COLS) {
-    setSoles(`${puCol}${mapRow(66)}`, precios[producto] ?? 0);
+    setSoles(`${puCol}${mapRow(66)}`, precioRep(producto));
   }
   ws.getCell(`L${mapRow(66)}`).value = null;
 
@@ -429,7 +472,9 @@ export function llenarHojaIsla(
   wsTabla.autoFilter = undefined;
 
   const pos = leerPosiciones(wb);
-  const precio = (p: ProductoId) => precios[p] ?? 0;
+  // Precio por SESIÓN (turno): cada fila se valoriza al precio de su propio
+  // turno, consistente con calcularCuadre (que valida este export).
+  const precio = (s: Sesion, p: ProductoId) => preciosDe(s, precios)[p] ?? 0;
 
   // Construye, para cada tabla, la lista combinada Isla1→Isla2→Isla3
   const filasYapes = islasOrdenadas.flatMap(({ isla, sesion }) =>
@@ -508,7 +553,7 @@ export function llenarHojaIsla(
   // precio), no el total de la venta — así está definido en todo el sistema.
   escribirTabla(filasDescuentos, pos.descuentosInicio, (rr, f) => {
     const d = f.dato as Sesion["descuentos"][number];
-    const descuentoPorGalon = Math.max(0, precio(d.producto) - d.precioDescuento);
+    const descuentoPorGalon = Math.max(0, precio(f.sesion, d.producto) - d.precioDescuento);
     ws.getCell(`G${rr}`).value = f.isla.nombre;
     ws.getCell(`H${rr}`).value = d.cliente || "";
     ws.getCell(`I${rr}`).value = PROD_LABEL[d.producto];
@@ -519,14 +564,14 @@ export function llenarHojaIsla(
   const totalDescuentos = r2(
     filasDescuentos.reduce((a, f) => {
       const d = f.dato as Sesion["descuentos"][number];
-      return a + d.galones * Math.max(0, precio(d.producto) - d.precioDescuento);
+      return a + d.galones * Math.max(0, precio(f.sesion, d.producto) - d.precioDescuento);
     }, 0)
   );
   ws.getCell(`J${filaTotalesFinal}`).value = totalDescuentos;
 
   escribirTabla(filasCreditos, pos.creditosInicio, (rr, f) => {
     const c = f.dato as Sesion["creditos"][number];
-    const total = r2(c.galones * precio(c.producto));
+    const total = r2(c.galones * precio(f.sesion, c.producto));
     ws.getCell(`M${rr}`).value = total;
     ws.getCell(`N${rr}`).value = f.isla.nombre;
     ws.getCell(`O${rr}`).value = c.cliente;
@@ -538,7 +583,7 @@ export function llenarHojaIsla(
   const totalCreditos = r2(
     filasCreditos.reduce((a, f) => {
       const c = f.dato as Sesion["creditos"][number];
-      return a + c.galones * precio(c.producto);
+      return a + c.galones * precio(f.sesion, c.producto);
     }, 0)
   );
   ws.getCell(`R${filaTotalesFinal}`).value = totalCreditos;
@@ -550,12 +595,12 @@ export function llenarHojaIsla(
     ws.getCell(`V${rr}`).value = f.sesion.trabajador;
     ws.getCell(`W${rr}`).value = PROD_LABEL[p.producto];
     ws.getCell(`X${rr}`).value = p.galones;
-    ws.getCell(`Y${rr}`).value = r2(p.galones * precio(p.producto));
+    ws.getCell(`Y${rr}`).value = r2(p.galones * precio(f.sesion, p.producto));
   });
   const totalPromociones = r2(
     filasPromociones.reduce((a, f) => {
       const p = f.dato as Sesion["promociones"][number];
-      return a + p.galones * precio(p.producto);
+      return a + p.galones * precio(f.sesion, p.producto);
     }, 0)
   );
   ws.getCell(`X${filaTotalesFinal}`).value = totalPromociones;

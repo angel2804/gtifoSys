@@ -26,6 +26,7 @@ import {
   setLogoRemoto,
   setPreciosRemoto,
   setClientesRemoto,
+  addClientesRemoto,
   setTrabajadoresRemoto,
   subscribeSesiones,
   upsertSesion,
@@ -51,7 +52,7 @@ import {
   turnosCompletosDeDia,
   turnosConAlgunaIslaCerrada,
 } from "@/lib/calc";
-import type { Admin, PrecioKey, Sesion, TurnoId } from "@/lib/types";
+import type { Admin, PrecioKey, Precios, Sesion, TurnoId } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { SesionVista } from "@/components/grifo/sesion-vista";
 import { ReporteDiaVista } from "@/components/grifo/reporte-dia-vista";
@@ -520,8 +521,10 @@ export default function AdminPage() {
   // (igual que cuando el trabajador los anota desde su turno).
   function aprenderCliente(nombre: unknown) {
     if (typeof nombre !== "string" || !nombre.trim()) return;
+    // Aditivo: solo agrega el nombre nuevo a la lista remota, nunca pisa la
+    // lista completa (así no resucita clientes que el admin ya eliminó).
     if (aprenderClientesStore([nombre])) {
-      setClientesRemoto(useStore.getState().clientes).catch(() => {});
+      addClientesRemoto([nombre]).catch(() => {});
     }
   }
   // ---- Gestión de la lista de clientes (autocompletado) ----
@@ -554,6 +557,13 @@ export default function AdminPage() {
       [mangueraId]: { ...s.odometros[mangueraId], ...patch },
     };
     persist({ ...s, odometros: od });
+  }
+  // El admin fija/corrige el precio de un turno: reemplaza el snapshot de
+  // precios de esa sesión (cada turno se valoriza con su propio precio).
+  function onSetPreciosSesion(sesionId: string, nuevosPrecios: Precios) {
+    const s = remote.find((x) => x.id === sesionId);
+    if (!s) return;
+    persist({ ...s, precios: nuevosPrecios });
   }
 
   function abrirIsla(islaId: string) {
@@ -766,6 +776,7 @@ export default function AdminPage() {
                 onRemoveRegistro={onRemoveRegistro}
                 onAddRegistro={onAddRegistro}
                 onUpdateOdometro={onUpdateOdometro}
+                onSetPreciosSesion={onSetPreciosSesion}
               />
             ) : (
               <div className="rounded-2xl border border-border/60 bg-card py-20 text-center text-sm text-muted-foreground shadow-sm">

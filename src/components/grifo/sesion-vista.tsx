@@ -123,7 +123,7 @@ export function SesionVista({
                     </TableCell>
                     <TableCell className="text-right">{o?.entrada || "—"}</TableCell>
                     <TableCell className="text-right">{o?.salida || "—"}</TableCell>
-                    <TableCell className="text-right font-medium">{gl.toFixed(0)}</TableCell>
+                    <TableCell className="text-right font-medium">{gl.toFixed(3)}</TableCell>
                     <TableCell className="text-right">{soles(pr)}</TableCell>
                     <TableCell className="text-right font-semibold">{soles(gl * pr)}</TableCell>
                   </TableRow>

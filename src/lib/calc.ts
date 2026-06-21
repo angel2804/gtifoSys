@@ -37,9 +37,20 @@ export function galonesPorProducto(s: Sesion): Record<string, number> {
   return acc;
 }
 
-export function calcularCuadre(s: Sesion, precios: Precios): Cuadre {
+// Precios efectivos de una sesión (turno): se usa el snapshot que el turno
+// guardó al abrirse —y que el admin puede corregir en el reporte— y se cae a
+// `fallback` (precios globales) para cualquier clave ausente en documentos
+// antiguos. Esto permite que cada turno tenga su propio precio (p. ej. el
+// cambio de las 2pm) sin tocar los turnos anteriores.
+export function preciosDe(s: Sesion, fallback: Precios): Precios {
+  return { ...fallback, ...(s.precios ?? {}) };
+}
+
+export function calcularCuadre(s: Sesion, preciosGlobal: Precios): Cuadre {
   const isla = getIsla(s.islaId);
   const galones = galonesPorProducto(s);
+  // El cuadre del turno se valoriza con el precio propio del turno.
+  const precios = preciosDe(s, preciosGlobal);
 
   const porProducto: FilaProducto[] = (isla?.productos ?? []).map((p) => {
     const g = galones[p] ?? 0;
@@ -298,24 +309,37 @@ export function calcularReporteDia(
       delDia.find((s) => s.islaId === isla.id && s.turno === t)
     ).filter(Boolean) as Sesion[];
     for (const m of isla.mangueras) {
-      const primera = sesionesIsla[0];
-      const ultima = sesionesIsla[sesionesIsla.length - 1];
-      const inicio = primera?.odometros[m.id]?.entrada ?? 0;
-      const final = ultima?.odometros[m.id]?.salida ?? 0;
-      const galones = Math.max(0, final - inicio);
-      const precio = precios[m.producto] ?? 0;
-      const soles = galones * precio;
-      odometros.push({
-        mangueraId: m.id,
-        label: m.label,
-        producto: m.producto,
-        islaNombre: isla.nombre,
-        inicio,
-        final,
-        galones,
-        precio,
-        soles,
-      });
+      // Tramos de precio: turnos CONSECUTIVOS con el mismo precio para este
+      // producto se agrupan, y su galonaje sale del odómetro de corrido
+      // (entrada del primer turno → salida del último turno del tramo). Así, si
+      // el precio cambia a las 2pm, la mañana queda en un tramo y tarde+noche
+      // en otro. Con un único precio en el día queda UN solo tramo, idéntico al
+      // comportamiento anterior (y conserva la tolerancia a salidas olvidadas
+      // dentro de cada tramo).
+      type Tramo = { precio: number; primera: Sesion; ultima: Sesion };
+      const tramos: Tramo[] = [];
+      for (const s of sesionesIsla) {
+        const precio = preciosDe(s, precios)[m.producto] ?? 0;
+        const ult = tramos[tramos.length - 1];
+        if (ult && ult.precio === precio) ult.ultima = s;
+        else tramos.push({ precio, primera: s, ultima: s });
+      }
+      for (const t of tramos) {
+        const inicio = t.primera.odometros[m.id]?.entrada ?? 0;
+        const final = t.ultima.odometros[m.id]?.salida ?? 0;
+        const galones = Math.max(0, final - inicio);
+        odometros.push({
+          mangueraId: m.id,
+          label: m.label,
+          producto: m.producto,
+          islaNombre: isla.nombre,
+          inicio,
+          final,
+          galones,
+          precio: t.precio,
+          soles: galones * t.precio,
+        });
+      }
     }
   }
 
@@ -430,7 +454,7 @@ export function construirCSVReporte(
         "—",
         f.inicio,
         f.final,
-        f.galones.toFixed(0),
+        f.galones.toFixed(3),
         f.precio.toFixed(2),
         f.soles.toFixed(2),
       ]);
@@ -451,7 +475,7 @@ export function construirCSVReporte(
           s?.trabajador ?? "FALTA",
           s ? inicio : "",
           s ? final : "",
-          galones.toFixed(0),
+          galones.toFixed(3),
           pr.toFixed(2),
           (galones * pr).toFixed(2),
         ]);
