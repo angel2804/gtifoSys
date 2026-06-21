@@ -108,6 +108,14 @@ export default function DashboardPage() {
   if (!hydrated || !auth || !sesion || !isla) return null;
 
   const precio = (p: ProductoId) => precios[p] ?? 0;
+  // Encoge la fuente del odómetro según los dígitos para que el número
+  // completo siempre quepa dentro del input (ej. 987654.321).
+  const odoText = (v: number | undefined) => {
+    const len = v ? String(v).length : 0;
+    if (len >= 13) return "text-[10px]";
+    if (len >= 11) return "text-xs";
+    return "text-sm";
+  };
   const cuadre = calcularCuadre(sesion, precios);
   const esGlp = isla.tipo === "glp";
 
@@ -234,7 +242,10 @@ export default function DashboardPage() {
                         </TableCell>
                         <TableCell>
                           <Input
-                            className="h-9 w-32 text-sm font-semibold tabular-nums"
+                            className={cn(
+                              "h-7 w-40 font-semibold tabular-nums",
+                              odoText(o?.entrada)
+                            )}
                             type="number"
                             value={o?.entrada || ""}
                             onWheel={(e) => e.currentTarget.blur()}
@@ -245,7 +256,10 @@ export default function DashboardPage() {
                         </TableCell>
                         <TableCell>
                           <Input
-                            className="h-9 w-32 text-sm font-semibold tabular-nums"
+                            className={cn(
+                              "h-7 w-40 font-semibold tabular-nums",
+                              odoText(o?.salida)
+                            )}
                             type="number"
                             value={o?.salida || ""}
                             onWheel={(e) => e.currentTarget.blur()}

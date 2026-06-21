@@ -118,7 +118,14 @@ export function ReporteRegistroModal<T extends { id: string }>({
                 onValueChange={(v) => cambiarGrupo(Number(v))}
               >
                 <SelectTrigger className="h-8 w-full text-xs">
-                  <SelectValue />
+                  <SelectValue>
+                    {() => {
+                      const g = grupos[grupoIdx];
+                      if (!g) return null;
+                      const isla = getIsla(g.sesion.islaId);
+                      return `${g.sesion.trabajador} · ${isla?.nombre} · ${turnoLabel(g.sesion.turno)}`;
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {grupos.map((g, i) => {

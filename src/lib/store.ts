@@ -215,7 +215,9 @@ export const useStore = create<StoreState>()(
         const odometros: Record<string, OdometroValor> = {};
         isla?.mangueras.forEach((m) => {
           const entrada = entradaAutomatica(sesiones, islaId, turno, m.id, diaActivo);
-          odometros[m.id] = { entrada, salida: entrada };
+          // La entrada se hereda de la salida del turno anterior; la salida
+          // del turno nuevo arranca vacía (0) para que el operador la llene.
+          odometros[m.id] = { entrada, salida: 0 };
         });
         const ahora = Date.now();
         const nueva: Sesion = {

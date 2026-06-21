@@ -389,7 +389,7 @@ export function ReporteDiaVista({
                     {f.sesionInicio ? (
                       <TableCell className="text-right">
                         <Input
-                          className="h-7 w-20 text-right text-xs"
+                          className="h-7 w-40 text-right text-sm font-semibold tabular-nums"
                           type="number"
                           value={oInicio?.entrada || ""}
                           onWheel={(e) => e.currentTarget.blur()}
@@ -405,9 +405,9 @@ export function ReporteDiaVista({
                     )}
                     {/* FINAL */}
                     {f.sesionFinal ? (
-                      <TableCell className="text-right">
+                      <TableCell className="text-right">  
                         <Input
-                          className="h-7 w-20 text-right text-xs"
+                          className="h-7 w-40 text-right text-sm font-semibold tabular-nums"
                           type="number"
                           value={oFinal?.salida || ""}
                           onWheel={(e) => e.currentTarget.blur()}
