@@ -401,6 +401,24 @@ export function llenarHojaIsla(
   const extra = Math.max(0, maxRegistros - huecosDisponibles);
   if (extra > 0) {
     ws.duplicateRow(pos.filaTotales - 1, extra, true);
+    // duplicateRow copia el estilo de la fila origen (la previa a totales),
+    // que en la plantilla puede traer celdas combinadas/estilos especiales:
+    // eso hacía que un registro agregado en esas filas apareciera desalineado
+    // (nombre/tipo en blanco, monto corrido). Reaplicamos a cada fila nueva el
+    // estilo de una fila de datos limpia (la primera, yapesInicio) y deshacemos
+    // cualquier combinación heredada.
+    for (let i = 0; i < extra; i++) {
+      const f = pos.filaTotales + i; // filas recién insertadas
+      for (let c = 1; c <= 28; c++) {
+        try {
+          ws.unMergeCells(f, c, f, c);
+        } catch {
+          /* la celda no estaba combinada */
+        }
+        ws.getCell(f, c).value = null;
+        ws.getCell(f, c).style = ws.getCell(pos.yapesInicio, c).style;
+      }
+    }
   }
   const filaTotalesFinal = pos.filaTotales + extra;
 
@@ -501,6 +519,12 @@ export function llenarHojaIsla(
     for (let c = 1; c <= 28; c++) {
       ws.getCell(f, c).font = FUENTE_NORMAL;
     }
+  }
+
+  // Altura uniforme de 14.5 para todas las filas (las filas duplicadas por
+  // overflow heredan alturas mayores; se normalizan aquí).
+  for (let i = 1; i <= ws.rowCount; i++) {
+    ws.getRow(i).height = 14.5;
   }
 
   return { totalYapes, totalDescuentos, totalCreditos, totalPromociones, totalGastos };
