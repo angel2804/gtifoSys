@@ -3,7 +3,7 @@
 export type ProductoId = "bio" | "regular" | "premium" | "glp";
 export type IslaTipo = "liquido" | "glp";
 export type TurnoId = "manana" | "tarde" | "noche";
-export type MetodoPago = "yape" | "transferencia" | "visa";
+export type MetodoPago = "yape" | "transferencia" | "visa" | "culqui";
 export type Rol = "admin" | "trabajador";
 
 // Balones de gas envasado (solo isla GLP)

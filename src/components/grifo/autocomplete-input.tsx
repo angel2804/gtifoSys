@@ -134,7 +134,9 @@ export function AutocompleteInput({
         placeholder={placeholder}
         value={value}
         onChange={(e) => {
-          onChange(e.target.value);
+          // Los nombres de cliente siempre se guardan/muestran en MAYÚSCULAS,
+          // sin importar cómo esté el teclado.
+          onChange(e.target.value.toUpperCase());
           setOpen(true);
           setActivo(-1);
         }}
@@ -146,7 +148,7 @@ export function AutocompleteInput({
           id={listId}
           role="listbox"
           className={cn(
-            "absolute left-0 top-full z-50 mt-1 max-h-56 w-full min-w-[10rem] overflow-auto",
+            "absolute left-0 top-full z-50 mt-1 max-h-56 w-max min-w-full max-w-[22rem] overflow-auto",
             "rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-black/5",
             "animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-150"
           )}

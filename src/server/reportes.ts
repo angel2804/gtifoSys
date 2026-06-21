@@ -216,11 +216,16 @@ export function llenarHojaMadre(
   const visas = r2(sumaPagos("visa"));
   const yapes = r2(sumaPagos("yape"));
   const transferencias = r2(sumaPagos("transferencia"));
+  // La plantilla madre solo tiene 3 filas de pago electrónico (Visa, Yape,
+  // Transferencia). "Visa Yape Culqui" se cobra por POS/QR igual que Yape, así
+  // que se suma a la fila de Yape para que el desglose siga cuadrando con el
+  // efectivo a entregar (que ya descuenta TODO el pago electrónico).
+  const culqui = r2(sumaPagos("culqui"));
   setSoles(`L${mapRow(58)}`, visas);
-  setSoles(`L${mapRow(59)}`, yapes);
+  setSoles(`L${mapRow(59)}`, r2(yapes + culqui));
   setSoles(`L${mapRow(60)}`, transferencias);
   const totalDeducciones = r2(
-    rep.totalDescuentos + rep.totalGastos + visas + yapes + transferencias
+    rep.totalDescuentos + rep.totalGastos + visas + yapes + culqui + transferencias
   );
   setSoles(`L${mapRow(61)}`, totalDeducciones);
 

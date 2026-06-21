@@ -25,6 +25,7 @@ import {
   setAdminsRemoto,
   setLogoRemoto,
   setPreciosRemoto,
+  setClientesRemoto,
   setTrabajadoresRemoto,
   subscribeSesiones,
   upsertSesion,
@@ -108,6 +109,7 @@ export default function AdminPage() {
   const setPrecio = useStore((s) => s.setPrecio);
   const trabajadores = useStore((s) => s.trabajadores);
   const setTrabajadoresStore = useStore((s) => s.setTrabajadores);
+  const aprenderClientesStore = useStore((s) => s.aprenderClientes);
   const logo = useStore((s) => s.logo);
   const setLogo = useStore((s) => s.setLogo);
   const admins = useStore((s) => s.admins);
@@ -485,6 +487,7 @@ export default function AdminPage() {
       (r) => (r.id === rowId ? { ...r, ...patch } : r)
     );
     persist({ ...s, [tipo]: arr });
+    aprenderCliente(patch.cliente);
   }
   function onRemoveRegistro(sesionId: string, tipo: string, rowId: string) {
     const s = remote.find((x) => x.id === sesionId);
@@ -504,6 +507,16 @@ export default function AdminPage() {
       { ...row, id: uid() },
     ];
     persist({ ...s, [tipo]: arr });
+    aprenderCliente(row.cliente);
+  }
+  // El admin escribe nombres de cliente nuevos al registrar/editar créditos,
+  // descuentos o adelantos: se aprenden en la base de clientes y se sincronizan
+  // (igual que cuando el trabajador los anota desde su turno).
+  function aprenderCliente(nombre: unknown) {
+    if (typeof nombre !== "string" || !nombre.trim()) return;
+    if (aprenderClientesStore([nombre])) {
+      setClientesRemoto(useStore.getState().clientes).catch(() => {});
+    }
   }
   function onUpdateOdometro(
     sesionId: string,
