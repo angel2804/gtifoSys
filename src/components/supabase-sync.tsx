@@ -11,7 +11,6 @@ import {
   subscribeSesiones,
   upsertSesion,
 } from "@/lib/db";
-import { aprenderClientes } from "@/lib/clientes";
 import { supabaseHabilitado } from "@/lib/supabase";
 import type { Admin, Precios, Sesion } from "@/lib/types";
 
@@ -61,16 +60,17 @@ export function SupabaseSync() {
     });
   }, [setLogo]);
 
-  // Lista de clientes en vivo (config/clientes). Se UNE con la lista local en
-  // vez de reemplazarla, para no perder clientes recién aprendidos en este
-  // dispositivo que aún no se subieron.
+  // Lista de clientes en vivo (config/clientes). La lista remota es la
+  // AUTORITATIVA: se reemplaza la local por la remota. Así las eliminaciones
+  // que hace el admin se propagan a todos los dispositivos (un merge por unión
+  // nunca podría quitar un cliente borrado, por eso reaparecían). Los clientes
+  // recién aprendidos en este dispositivo se suben enseguida (efecto de abajo)
+  // y vuelven en la siguiente actualización remota.
   useEffect(() => {
     if (!supabaseHabilitado) return;
     return subscribeConfig<{ nombres: string[] }>("clientes", (v) => {
       if (!Array.isArray(v.nombres)) return;
-      const { clientes } = useStore.getState();
-      const unidos = aprenderClientes(clientes, v.nombres);
-      if (unidos !== clientes) setClientes(unidos);
+      setClientes(v.nombres);
     });
   }, [setClientes]);
 
