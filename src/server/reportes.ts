@@ -12,6 +12,110 @@ import type { MetodoPago, Precios, ProductoId, Sesion, TurnoId } from "@/lib/typ
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+// ===========================================================================
+// HOJA ODOMETROS (generada sin plantilla)
+// ===========================================================================
+
+const PROD_LABEL_ODO: Record<ProductoId, string> = {
+  bio: "BIO-DIESEL",
+  regular: "G-REGULAR",
+  premium: "G-PREMIUM",
+  glp: "GLP",
+};
+
+// Construye la hoja "ODOMETROS" del día: por cada manguera, la entrada de la
+// mañana y la salida de la noche (odómetro continuo del día), con sus galones,
+// precio y monto. Se agrupa por isla.
+export function llenarHojaOdometros(
+  ws: ExcelJS.Worksheet,
+  sesiones: Sesion[],
+  dia: string,
+  precios: Precios
+): void {
+  const rep = calcularReporteDia(sesiones, dia, precios);
+
+  const SOLES_FMT = '"S/ "#,##0.00;-"S/ "#,##0.00;"S/ -"';
+  const GAL_FMT = "#,##0.000";
+
+  // Anchos de columna
+  ws.getColumn(1).width = 12; // Isla
+  ws.getColumn(2).width = 14; // Manguera
+  ws.getColumn(3).width = 14; // Producto
+  ws.getColumn(4).width = 14; // Entrada (mañana)
+  ws.getColumn(5).width = 14; // Salida (noche)
+  ws.getColumn(6).width = 12; // Galones
+  ws.getColumn(7).width = 12; // Precio
+  ws.getColumn(8).width = 14; // Monto
+
+  // Título
+  ws.mergeCells("A1:H1");
+  const titulo = ws.getCell("A1");
+  titulo.value = `ODÓMETROS GENERALES — ${dia}`;
+  titulo.font = { bold: true, size: 13 };
+  titulo.alignment = { horizontal: "center" };
+
+  // Encabezados
+  const headers = [
+    "ISLA",
+    "MANGUERA",
+    "PRODUCTO",
+    "ENTRADA MAÑANA",
+    "SALIDA NOCHE",
+    "GALONES",
+    "PRECIO",
+    "MONTO",
+  ];
+  const headRow = ws.getRow(3);
+  headers.forEach((h, i) => {
+    const c = headRow.getCell(i + 1);
+    c.value = h;
+    c.font = { bold: true };
+    c.alignment = { horizontal: "center", wrapText: true };
+    c.border = { bottom: { style: "thin" } };
+  });
+
+  // Filas de odómetros (una por manguera/tramo). El reporte ya entrega
+  // inicio=entrada del primer turno, final=salida del último turno del día.
+  let r = 4;
+  let totalGalones = 0;
+  let totalMonto = 0;
+  for (const o of rep.odometros) {
+    ws.getCell(`A${r}`).value = o.islaNombre;
+    ws.getCell(`B${r}`).value = o.label;
+    ws.getCell(`C${r}`).value = PROD_LABEL_ODO[o.producto] ?? o.producto;
+    ws.getCell(`D${r}`).value = o.inicio;
+    ws.getCell(`E${r}`).value = o.final;
+    const gal = ws.getCell(`F${r}`);
+    gal.value = r2(o.galones);
+    gal.numFmt = GAL_FMT;
+    const pre = ws.getCell(`G${r}`);
+    pre.value = o.precio;
+    pre.numFmt = SOLES_FMT;
+    const mon = ws.getCell(`H${r}`);
+    mon.value = r2(o.soles);
+    mon.numFmt = SOLES_FMT;
+    totalGalones += o.galones;
+    totalMonto += o.soles;
+    r++;
+  }
+
+  // Fila de totales
+  const totRow = r;
+  ws.getCell(`C${totRow}`).value = "TOTAL";
+  ws.getCell(`C${totRow}`).font = { bold: true };
+  const totGal = ws.getCell(`F${totRow}`);
+  totGal.value = r2(totalGalones);
+  totGal.numFmt = GAL_FMT;
+  totGal.font = { bold: true };
+  const totMon = ws.getCell(`H${totRow}`);
+  totMon.value = r2(totalMonto);
+  totMon.numFmt = SOLES_FMT;
+  totMon.font = { bold: true };
+  for (let c = 1; c <= 8; c++) {
+    ws.getCell(totRow, c).border = { top: { style: "thin" } };
+  }
+}
+
 // Cómo se muestra cada método de pago en el Excel (el método "culqui" se
 // rotula "YAPE CULQUI").
 const METODO_LABEL: Record<MetodoPago, string> = {

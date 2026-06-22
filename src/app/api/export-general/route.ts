@@ -5,6 +5,7 @@ import { ORDEN_TURNO } from "@/lib/calc";
 import {
   llenarHojaIsla,
   llenarHojaMadre,
+  llenarHojaOdometros,
   TURNO_NOMBRE,
 } from "@/server/reportes";
 import type { Precios, Sesion } from "@/lib/types";
@@ -44,6 +45,10 @@ export async function POST(req: NextRequest) {
     };
 
     const out = new ExcelJS.Workbook();
+
+    // --- Hoja ODOMETROS (primera hoja, generada sin plantilla) ---
+    const wsOdo = out.addWorksheet("ODOMETROS");
+    llenarHojaOdometros(wsOdo, sesiones, dia, precios);
 
     // --- Hojas por turno (MAÑANA, TARDE, NOCHE) con la plantilla por isla ---
     for (const turno of ORDEN_TURNO) {
