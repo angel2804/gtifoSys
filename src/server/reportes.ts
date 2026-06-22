@@ -76,7 +76,7 @@ export function llenarHojaOdometros(
     ws.getCell(addr).fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: { argb: "FFD9D9D9" },
+      fgColor: { argb: "FFBFBFBF" },
     };
   };
 
@@ -112,6 +112,7 @@ export function llenarHojaOdometros(
       const f = ws.getCell(`F${bloque.filaInicio}`);
       f.value = r2(bioTotal);
       f.numFmt = "0.00";
+      pintarGris(`F${bloque.filaInicio}`); // total BIO con el mismo gris
       grandRegular += galDe(bloque.mangueras[2]);
       grandPremium += galDe(bloque.mangueras[3]);
     }
