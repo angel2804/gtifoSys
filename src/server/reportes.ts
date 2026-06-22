@@ -16,20 +16,23 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 // HOJA ODOMETROS (generada sin plantilla)
 // ===========================================================================
 
-// Color del sistema por producto (equivalente a PRODUCTO_COLOR de la UI,
-// traducido a ARGB sólido para Excel). Solo se usa en las columnas Producto,
-// Entrada y Salida.
-const PRODUCTO_FILL_ODO: Record<ProductoId, string> = {
-  bio: "FFE4E4E7", // zinc-200
-  regular: "FF86EFAC", // green-300
-  premium: "FFBAE6FD", // sky-200
-  glp: "FFFDE68A", // amber-200
-};
+// Bloques de la plantilla ODOMETROS (odometros.xlsx). Cada isla física se
+// divide en sub-bloques de 4 mangueras (ISLA I..V), tal como la plantilla del
+// usuario. Cada bloque ocupa 4 filas a partir de `filaInicio`, en el orden:
+// BIO-A, BIO-B, G-REGULAR, G-PREMIUM (la isla GLP: sus 4 mangueras).
+const ODO_BLOQUES: { filaInicio: number; mangueras: string[] }[] = [
+  { filaInicio: 7, mangueras: ["i1_bio1a", "i1_bio1b", "i1_reg1", "i1_prem1"] },
+  { filaInicio: 15, mangueras: ["i1_bio2a", "i1_bio2b", "i1_reg2", "i1_prem2"] },
+  { filaInicio: 23, mangueras: ["i2_bio3a", "i2_bio3b", "i2_reg3", "i2_prem3"] },
+  { filaInicio: 31, mangueras: ["i2_bio4a", "i2_bio4b", "i2_reg4", "i2_prem4"] },
+  { filaInicio: 39, mangueras: ["i3_glp_a1", "i3_glp_a2", "i3_glp_b1", "i3_glp_b2"] },
+];
 
-// Construye la hoja "ODOMETROS" del día: por cada manguera, la entrada de la
-// mañana y la salida de la noche (odómetro continuo del día), con sus galones,
-// precio y monto. Se agrupa por isla. El color del sistema (por producto) solo
-// pinta las columnas Producto, Entrada y Salida.
+// Llena la hoja "ODOMETROS" sobre la plantilla odometros.xlsx. Por cada
+// manguera escribe INGRESO (entrada mañana), SALIDA (salida noche) y GLNS
+// (galones del día). Los TOTAL (col F): por bloque líquido = suma de las dos
+// mangueras BIO; en el bloque ISLA IV además el total general de G-REGULAR y
+// G-PREMIUM; en el bloque GLP = suma de sus 4 mangueras.
 export function llenarHojaOdometros(
   ws: ExcelJS.Worksheet,
   sesiones: Sesion[],
@@ -38,98 +41,69 @@ export function llenarHojaOdometros(
 ): void {
   const rep = calcularReporteDia(sesiones, dia, precios);
 
-  const SOLES_FMT = '"S/ "#,##0.00;-"S/ "#,##0.00;"S/ -"';
-  const GAL_FMT = "#,##0.000";
-
-  // Anchos de columna
-  ws.getColumn(1).width = 12; // Isla
-  ws.getColumn(2).width = 14; // Producto (etiqueta de manguera)
-  ws.getColumn(3).width = 14; // Entrada (mañana)
-  ws.getColumn(4).width = 14; // Salida (noche)
-  ws.getColumn(5).width = 12; // Galones
-  ws.getColumn(6).width = 12; // Precio
-  ws.getColumn(7).width = 14; // Monto
-
-  // Título
-  ws.mergeCells("A1:G1");
-  const titulo = ws.getCell("A1");
-  titulo.value = `ODÓMETROS GENERALES — ${dia}`;
-  titulo.font = { bold: true, size: 13 };
-  titulo.alignment = { horizontal: "center" };
-
-  // Encabezados
-  const headers = [
-    "ISLA",
-    "PRODUCTO",
-    "ENTRADA MAÑANA",
-    "SALIDA NOCHE",
-    "GALONES",
-    "PRECIO",
-    "MONTO",
-  ];
-  const headRow = ws.getRow(3);
-  headers.forEach((h, i) => {
-    const c = headRow.getCell(i + 1);
-    c.value = h;
-    c.font = { bold: true };
-    c.alignment = { horizontal: "center", wrapText: true };
-    c.border = { bottom: { style: "thin" } };
-  });
-
-  const pintar = (addr: string, argb: string) => {
-    ws.getCell(addr).fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb },
-    };
-  };
-
-  // Filas de odómetros (una por manguera/tramo). El reporte ya entrega
-  // inicio=entrada del primer turno, final=salida del último turno del día.
-  let r = 4;
-  let totalGalones = 0;
-  let totalMonto = 0;
+  // Odómetro continuo por manguera: entrada del primer tramo, salida del
+  // último, galones = suma de tramos (consistente con calcularReporteDia).
+  const odoPorManguera = new Map<
+    string,
+    { inicio: number; final: number; galones: number }
+  >();
   for (const o of rep.odometros) {
-    const color = PRODUCTO_FILL_ODO[o.producto];
-    ws.getCell(`A${r}`).value = o.islaNombre;
-    ws.getCell(`B${r}`).value = o.label;
-    ws.getCell(`C${r}`).value = o.inicio;
-    ws.getCell(`D${r}`).value = o.final;
-    const gal = ws.getCell(`E${r}`);
-    gal.value = r2(o.galones);
-    gal.numFmt = GAL_FMT;
-    const pre = ws.getCell(`F${r}`);
-    pre.value = o.precio;
-    pre.numFmt = SOLES_FMT;
-    const mon = ws.getCell(`G${r}`);
-    mon.value = r2(o.soles);
-    mon.numFmt = SOLES_FMT;
-    // Color del sistema: solo Producto, Entrada y Salida.
-    if (color) {
-      pintar(`B${r}`, color);
-      pintar(`C${r}`, color);
-      pintar(`D${r}`, color);
+    const ex = odoPorManguera.get(o.mangueraId);
+    if (ex) {
+      ex.final = o.final;
+      ex.galones += o.galones;
+    } else {
+      odoPorManguera.set(o.mangueraId, {
+        inicio: o.inicio,
+        final: o.final,
+        galones: o.galones,
+      });
     }
-    totalGalones += o.galones;
-    totalMonto += o.soles;
-    r++;
+  }
+  const galDe = (id: string) => odoPorManguera.get(id)?.galones ?? 0;
+
+  ws.getCell("B2").value = `GENERAL — ${dia}`;
+
+  let grandRegular = 0;
+  let grandPremium = 0;
+
+  for (const bloque of ODO_BLOQUES) {
+    bloque.mangueras.forEach((id, i) => {
+      const fila = bloque.filaInicio + i;
+      const o = odoPorManguera.get(id) ?? { inicio: 0, final: 0, galones: 0 };
+      ws.getCell(`C${fila}`).value = o.inicio;
+      ws.getCell(`D${fila}`).value = o.final;
+      const gal = ws.getCell(`E${fila}`);
+      gal.value = r2(o.galones);
+      gal.numFmt = "0.000";
+    });
+
+    const esGlp = bloque.mangueras[0].startsWith("i3_");
+    if (esGlp) {
+      // Total GLP = suma de las 4 mangueras (merge F39:F42).
+      const total = bloque.mangueras.reduce((a, id) => a + galDe(id), 0);
+      const f = ws.getCell(`F${bloque.filaInicio}`);
+      f.value = r2(total);
+      f.numFmt = "0.00";
+    } else {
+      // Total del bloque líquido = BIO-A + BIO-B (merge F<inicio>:F<inicio+1>).
+      const bioTotal = galDe(bloque.mangueras[0]) + galDe(bloque.mangueras[1]);
+      const f = ws.getCell(`F${bloque.filaInicio}`);
+      f.value = r2(bioTotal);
+      f.numFmt = "0.00";
+      grandRegular += galDe(bloque.mangueras[2]);
+      grandPremium += galDe(bloque.mangueras[3]);
+    }
   }
 
-  // Fila de totales
-  const totRow = r;
-  ws.getCell(`B${totRow}`).value = "TOTAL";
-  ws.getCell(`B${totRow}`).font = { bold: true };
-  const totGal = ws.getCell(`E${totRow}`);
-  totGal.value = r2(totalGalones);
-  totGal.numFmt = GAL_FMT;
-  totGal.font = { bold: true };
-  const totMon = ws.getCell(`G${totRow}`);
-  totMon.value = r2(totalMonto);
-  totMon.numFmt = SOLES_FMT;
-  totMon.font = { bold: true };
-  for (let c = 1; c <= 7; c++) {
-    ws.getCell(totRow, c).border = { top: { style: "thin" } };
-  }
+  // Totales generales de G-REGULAR y G-PREMIUM (todas las islas líquidas),
+  // ubicados en el bloque ISLA IV: F33 (regular) y F34 (premium).
+  const fReg = ws.getCell("F33");
+  fReg.value = r2(grandRegular);
+  fReg.numFmt = "0.00";
+  const fPrem = ws.getCell("F34");
+  fPrem.value = r2(grandPremium);
+  fPrem.numFmt = "0.00";
 }
 
 // Cómo se muestra cada método de pago en el Excel (el método "culqui" se

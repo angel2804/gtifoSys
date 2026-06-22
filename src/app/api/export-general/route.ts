@@ -14,6 +14,8 @@ const MADRE_PATH = () =>
   path.join(process.cwd(), "src/server/templates/madre.xlsx");
 const ISLA_PATH = () =>
   path.join(process.cwd(), "src/server/templates/plantilla-isla.xlsx");
+const ODOMETROS_PATH = () =>
+  path.join(process.cwd(), "src/server/templates/odometros.xlsx");
 
 // Copia una hoja ya llena (de otro libro) al libro destino. El setter de
 // `model` no reaplica los rangos combinados (mergeCells), así que se reponen.
@@ -46,9 +48,12 @@ export async function POST(req: NextRequest) {
 
     const out = new ExcelJS.Workbook();
 
-    // --- Hoja ODOMETROS (primera hoja, generada sin plantilla) ---
-    const wsOdo = out.addWorksheet("ODOMETROS");
+    // --- Hoja ODOMETROS (primera hoja) con la plantilla del usuario ---
+    const wbOdo = new ExcelJS.Workbook();
+    await wbOdo.xlsx.readFile(ODOMETROS_PATH());
+    const wsOdo = wbOdo.worksheets[0];
     llenarHojaOdometros(wsOdo, sesiones, dia, precios);
+    copiarHoja(out, "ODOMETROS", wsOdo);
 
     // --- Hojas por turno (MAÑANA, TARDE, NOCHE) con la plantilla por isla ---
     for (const turno of ORDEN_TURNO) {
