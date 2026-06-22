@@ -16,16 +16,20 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 // HOJA ODOMETROS (generada sin plantilla)
 // ===========================================================================
 
-const PROD_LABEL_ODO: Record<ProductoId, string> = {
-  bio: "BIO-DIESEL",
-  regular: "G-REGULAR",
-  premium: "G-PREMIUM",
-  glp: "GLP",
+// Color del sistema por producto (equivalente a PRODUCTO_COLOR de la UI,
+// traducido a ARGB sólido para Excel). Solo se usa en las columnas Producto,
+// Entrada y Salida.
+const PRODUCTO_FILL_ODO: Record<ProductoId, string> = {
+  bio: "FFE4E4E7", // zinc-200
+  regular: "FF86EFAC", // green-300
+  premium: "FFBAE6FD", // sky-200
+  glp: "FFFDE68A", // amber-200
 };
 
 // Construye la hoja "ODOMETROS" del día: por cada manguera, la entrada de la
 // mañana y la salida de la noche (odómetro continuo del día), con sus galones,
-// precio y monto. Se agrupa por isla.
+// precio y monto. Se agrupa por isla. El color del sistema (por producto) solo
+// pinta las columnas Producto, Entrada y Salida.
 export function llenarHojaOdometros(
   ws: ExcelJS.Worksheet,
   sesiones: Sesion[],
@@ -39,16 +43,15 @@ export function llenarHojaOdometros(
 
   // Anchos de columna
   ws.getColumn(1).width = 12; // Isla
-  ws.getColumn(2).width = 14; // Manguera
-  ws.getColumn(3).width = 14; // Producto
-  ws.getColumn(4).width = 14; // Entrada (mañana)
-  ws.getColumn(5).width = 14; // Salida (noche)
-  ws.getColumn(6).width = 12; // Galones
-  ws.getColumn(7).width = 12; // Precio
-  ws.getColumn(8).width = 14; // Monto
+  ws.getColumn(2).width = 14; // Producto (etiqueta de manguera)
+  ws.getColumn(3).width = 14; // Entrada (mañana)
+  ws.getColumn(4).width = 14; // Salida (noche)
+  ws.getColumn(5).width = 12; // Galones
+  ws.getColumn(6).width = 12; // Precio
+  ws.getColumn(7).width = 14; // Monto
 
   // Título
-  ws.mergeCells("A1:H1");
+  ws.mergeCells("A1:G1");
   const titulo = ws.getCell("A1");
   titulo.value = `ODÓMETROS GENERALES — ${dia}`;
   titulo.font = { bold: true, size: 13 };
@@ -57,7 +60,6 @@ export function llenarHojaOdometros(
   // Encabezados
   const headers = [
     "ISLA",
-    "MANGUERA",
     "PRODUCTO",
     "ENTRADA MAÑANA",
     "SALIDA NOCHE",
@@ -74,26 +76,40 @@ export function llenarHojaOdometros(
     c.border = { bottom: { style: "thin" } };
   });
 
+  const pintar = (addr: string, argb: string) => {
+    ws.getCell(addr).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb },
+    };
+  };
+
   // Filas de odómetros (una por manguera/tramo). El reporte ya entrega
   // inicio=entrada del primer turno, final=salida del último turno del día.
   let r = 4;
   let totalGalones = 0;
   let totalMonto = 0;
   for (const o of rep.odometros) {
+    const color = PRODUCTO_FILL_ODO[o.producto];
     ws.getCell(`A${r}`).value = o.islaNombre;
     ws.getCell(`B${r}`).value = o.label;
-    ws.getCell(`C${r}`).value = PROD_LABEL_ODO[o.producto] ?? o.producto;
-    ws.getCell(`D${r}`).value = o.inicio;
-    ws.getCell(`E${r}`).value = o.final;
-    const gal = ws.getCell(`F${r}`);
+    ws.getCell(`C${r}`).value = o.inicio;
+    ws.getCell(`D${r}`).value = o.final;
+    const gal = ws.getCell(`E${r}`);
     gal.value = r2(o.galones);
     gal.numFmt = GAL_FMT;
-    const pre = ws.getCell(`G${r}`);
+    const pre = ws.getCell(`F${r}`);
     pre.value = o.precio;
     pre.numFmt = SOLES_FMT;
-    const mon = ws.getCell(`H${r}`);
+    const mon = ws.getCell(`G${r}`);
     mon.value = r2(o.soles);
     mon.numFmt = SOLES_FMT;
+    // Color del sistema: solo Producto, Entrada y Salida.
+    if (color) {
+      pintar(`B${r}`, color);
+      pintar(`C${r}`, color);
+      pintar(`D${r}`, color);
+    }
     totalGalones += o.galones;
     totalMonto += o.soles;
     r++;
@@ -101,17 +117,17 @@ export function llenarHojaOdometros(
 
   // Fila de totales
   const totRow = r;
-  ws.getCell(`C${totRow}`).value = "TOTAL";
-  ws.getCell(`C${totRow}`).font = { bold: true };
-  const totGal = ws.getCell(`F${totRow}`);
+  ws.getCell(`B${totRow}`).value = "TOTAL";
+  ws.getCell(`B${totRow}`).font = { bold: true };
+  const totGal = ws.getCell(`E${totRow}`);
   totGal.value = r2(totalGalones);
   totGal.numFmt = GAL_FMT;
   totGal.font = { bold: true };
-  const totMon = ws.getCell(`H${totRow}`);
+  const totMon = ws.getCell(`G${totRow}`);
   totMon.value = r2(totalMonto);
   totMon.numFmt = SOLES_FMT;
   totMon.font = { bold: true };
-  for (let c = 1; c <= 8; c++) {
+  for (let c = 1; c <= 7; c++) {
     ws.getCell(totRow, c).border = { top: { style: "thin" } };
   }
 }

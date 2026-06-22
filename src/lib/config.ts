@@ -88,10 +88,10 @@ export const ISLAS: Isla[] = [
     tipo: "glp",
     productos: ["glp"],
     mangueras: [
-      { id: "i3_glp_a1", label: "GLP A1", producto: "glp" },
-      { id: "i3_glp_a2", label: "GLP A2", producto: "glp" },
-      { id: "i3_glp_b1", label: "GLP B1", producto: "glp" },
-      { id: "i3_glp_b2", label: "GLP B2", producto: "glp" },
+      { id: "i3_glp_a1", label: "GLP 5A", producto: "glp" },
+      { id: "i3_glp_a2", label: "GLP 5B", producto: "glp" },
+      { id: "i3_glp_b1", label: "GLP 6A", producto: "glp" },
+      { id: "i3_glp_b2", label: "GLP 6B", producto: "glp" },
     ],
   },
 ];
