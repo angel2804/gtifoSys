@@ -64,6 +64,22 @@ export function llenarHojaOdometros(
 
   ws.getCell("B2").value = `GENERAL — ${dia}`;
 
+  // Anchos que permiten ver los números completos (evita "#####").
+  ws.getColumn("B").width = 13;
+  ws.getColumn("C").width = 16;
+  ws.getColumn("D").width = 16;
+  ws.getColumn("E").width = 12;
+  ws.getColumn("F").width = 12;
+
+  // BIO en gris claro (solo la celda de producto de las filas BIO).
+  const pintarGris = (addr: string) => {
+    ws.getCell(addr).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFD9D9D9" },
+    };
+  };
+
   let grandRegular = 0;
   let grandPremium = 0;
 
@@ -79,6 +95,11 @@ export function llenarHojaOdometros(
     });
 
     const esGlp = bloque.mangueras[0].startsWith("i3_");
+    if (!esGlp) {
+      // Las dos primeras filas del bloque líquido son BIO.
+      pintarGris(`B${bloque.filaInicio}`);
+      pintarGris(`B${bloque.filaInicio + 1}`);
+    }
     if (esGlp) {
       // Total GLP = suma de las 4 mangueras (merge F39:F42).
       const total = bloque.mangueras.reduce((a, id) => a + galDe(id), 0);
