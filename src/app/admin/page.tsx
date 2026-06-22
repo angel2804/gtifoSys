@@ -255,6 +255,30 @@ export default function AdminPage() {
     setPrecio(k, v);
     setPreciosRemoto({ ...precios, [k]: v }).catch(() => {});
   }
+  // Corrige el precio de un turno y lo propaga a TODOS los turnos del mismo
+  // periodo (mañana/tarde/noche) de ese día operativo, para mantener el precio
+  // bloqueado por periodo consistente. Actualiza local (optimista) y remoto.
+  async function guardarPreciosPeriodo(base: Sesion, nuevos: Precios) {
+    const dia = diaOperativo(base);
+    const afectadas = remote.filter(
+      (s) => diaOperativo(s) === dia && s.turno === base.turno
+    );
+    const ahora = Date.now();
+    const actualizadas = afectadas.map((s) => ({
+      ...s,
+      precios: nuevos,
+      updatedAt: ahora,
+    }));
+    setRemoteList((prev) =>
+      prev.map((s) => actualizadas.find((u) => u.id === s.id) ?? s)
+    );
+    await Promise.all(actualizadas.map((s) => upsertSesion(s).catch(() => {})));
+    toast.success(
+      `Precio actualizado en ${actualizadas.length} turno(s) de ${turnoLabel(
+        base.turno
+      )}`
+    );
+  }
 
   // ---- Gestión de usuarios (trabajadores) ----
   function persistTrabajadores(nombres: string[]) {
@@ -758,7 +782,13 @@ export default function AdminPage() {
               </div>
               <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
                 {seleccionada ? (
-                  <SesionVista sesion={seleccionada} precios={precios} />
+                  <SesionVista
+                    sesion={seleccionada}
+                    precios={precios}
+                    onGuardarPrecios={(nuevos) =>
+                      guardarPreciosPeriodo(seleccionada, nuevos)
+                    }
+                  />
                 ) : (
                   <div className="py-20 text-center text-sm text-muted-foreground">
                     Selecciona un turno activo para ver su detalle en tiempo real.

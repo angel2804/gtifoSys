@@ -9,29 +9,66 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { Pencil, Check, X } from "lucide-react";
 import {
   getIsla,
   PRODUCTOS,
   PRODUCTO_COLOR,
   turnoLabel,
 } from "@/lib/config";
-import { calcularCuadre, soles } from "@/lib/calc";
+import { calcularCuadre, preciosDe, soles } from "@/lib/calc";
 import type { Precios, ProductoId, Sesion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 // Vista de SOLO LECTURA de un turno — refleja lo que ve el trabajador.
+// Si se pasa `onGuardarPrecios`, las etiquetas de precio se vuelven editables
+// (usado por el admin para corregir el precio de un turno/periodo).
 export function SesionVista({
   sesion,
   precios,
+  onGuardarPrecios,
 }: {
   sesion: Sesion;
   precios: Precios;
+  onGuardarPrecios?: (nuevos: Precios) => void | Promise<void>;
 }) {
   const isla = getIsla(sesion.islaId);
+  // El turno se valoriza con SU precio propio (snapshot al abrirlo), no con el
+  // global del momento; el global solo sirve de respaldo si faltara.
+  const preciosTurno = preciosDe(sesion, precios);
+  const [editando, setEditando] = useState(false);
+  const [borrador, setBorrador] = useState<Record<string, string>>({});
+  const [guardando, setGuardando] = useState(false);
+
   if (!isla) return null;
-  const precio = (p: ProductoId) => precios[p] ?? 0;
+  const precio = (p: ProductoId) => preciosTurno[p] ?? 0;
   const cuadre = calcularCuadre(sesion, precios);
   const esGlp = isla.tipo === "glp";
+
+  function abrirEdicion() {
+    const b: Record<string, string> = {};
+    isla!.productos.forEach((p) => (b[p] = String(preciosTurno[p] ?? 0)));
+    setBorrador(b);
+    setEditando(true);
+  }
+  async function guardar() {
+    if (!onGuardarPrecios) return;
+    const nuevos: Precios = { ...preciosTurno };
+    isla!.productos.forEach((p) => {
+      const v = parseFloat(borrador[p]);
+      if (!Number.isNaN(v) && v >= 0) nuevos[p] = v;
+    });
+    setGuardando(true);
+    try {
+      await onGuardarPrecios(nuevos);
+      setEditando(false);
+    } finally {
+      setGuardando(false);
+    }
+  }
 
   const mini: { titulo: string; n: number; total: string }[] = [
     {
@@ -88,12 +125,59 @@ export function SesionVista({
           </span>
         )}
         {sesion.cerrada && <Badge variant="outline">Finalizado</Badge>}
-        <span className="ml-auto flex flex-wrap gap-2">
-          {isla.productos.map((p) => (
-            <span key={p} className="rounded bg-muted px-2 py-0.5">
-              {PRODUCTOS[p]} <b>{soles(precio(p))}</b>
-            </span>
-          ))}
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          {!editando ? (
+            <>
+              {isla.productos.map((p) => (
+                <span key={p} className="rounded bg-muted px-2 py-0.5">
+                  {PRODUCTOS[p]} <b>{soles(precio(p))}</b>
+                </span>
+              ))}
+              {onGuardarPrecios && (
+                <button
+                  onClick={abrirEdicion}
+                  title="Corregir precio"
+                  className="flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <Pencil className="h-3 w-3" /> Editar precio
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              {isla.productos.map((p) => (
+                <span key={p} className="flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
+                  {PRODUCTOS[p]}
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={borrador[p] ?? ""}
+                    onChange={(e) =>
+                      setBorrador((b) => ({ ...b, [p]: e.target.value }))
+                    }
+                    className="h-6 w-20 px-1.5 text-right text-xs"
+                  />
+                </span>
+              ))}
+              <Button
+                size="sm"
+                onClick={guardar}
+                disabled={guardando}
+                className="h-6 gap-1 px-2 text-[11px]"
+              >
+                <Check className="h-3 w-3" /> {guardando ? "Guardando…" : "Guardar"}
+              </Button>
+              <button
+                onClick={() => setEditando(false)}
+                disabled={guardando}
+                title="Cancelar"
+                className="flex h-6 items-center rounded border border-border px-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </>
+          )}
         </span>
       </div>
 

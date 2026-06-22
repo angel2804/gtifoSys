@@ -21,7 +21,7 @@ import type {
 } from "./types";
 import { getIsla, PRECIOS_DEFAULT, TRABAJADORES_DEFAULT } from "./config";
 import { aprenderClientes } from "./clientes";
-import { diaActivoParaNuevosTurnos, diaOperativo } from "./calc";
+import { diaActivoParaNuevosTurnos, diaOperativo, preciosDe } from "./calc";
 
 const TURNO_ORDEN: TurnoId[] = ["manana", "tarde", "noche"];
 // Versión del esquema de cada documento de sesión en Firestore.
@@ -212,6 +212,15 @@ export const useStore = create<StoreState>()(
 
         const isla = getIsla(islaId);
         const { auth, precios } = get();
+        // Precio bloqueado por periodo: el PRIMER turno que se abre en este
+        // día operativo para este periodo (mañana/tarde/noche) fija el precio;
+        // los siguientes turnos del mismo periodo heredan ese precio en vez de
+        // tomar el global del momento. Si aún no hay ninguno, este es el
+        // primero y usa el precio global actual.
+        const preciosPeriodo = sesiones.find(
+          (s) => diaOperativo(s) === diaActivo && s.turno === turno
+        )?.precios;
+        const preciosTurno = preciosPeriodo ?? precios;
         const odometros: Record<string, OdometroValor> = {};
         isla?.mangueras.forEach((m) => {
           const entrada = entradaAutomatica(sesiones, islaId, turno, m.id, diaActivo);
@@ -226,7 +235,7 @@ export const useStore = create<StoreState>()(
           trabajador: auth?.trabajador || "Admin",
           islaId,
           turno,
-          precios: { ...precios },
+          precios: { ...preciosTurno },
           odometros,
           pagos: [],
           creditos: [],
@@ -405,10 +414,21 @@ export const useStore = create<StoreState>()(
       cerrarSesion: (id) =>
         set((state) => {
           const ahora = Date.now();
+          const globales = state.precios;
           return {
             sesiones: state.sesiones.map((s) =>
               s.id === id
-                ? { ...s, cerrada: true, closedAt: ahora, updatedAt: ahora }
+                ? {
+                    ...s,
+                    // Al finalizar, el precio del turno se CONGELA con el que
+                    // estaba vigente en ese momento (su snapshot, o el global
+                    // como respaldo). Así un turno cerrado nunca cambia aunque
+                    // el admin modifique el precio global después.
+                    precios: preciosDe(s, globales),
+                    cerrada: true,
+                    closedAt: ahora,
+                    updatedAt: ahora,
+                  }
                 : s
             ),
           };
