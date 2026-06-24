@@ -152,6 +152,17 @@ export function diaOperativoActual(ref = Date.now()): string {
   return diaOperativoDe(ref, "noche");
 }
 
+// Nombre usado para marcar un turno sin trabajador asignado (p. ej. tras mover
+// al trabajador a otra isla). Un turno así debe tratarse como LIBRE.
+export const TRABAJADOR_SIN_ASIGNAR = "(sin asignar)";
+
+// ¿Esta sesión no tiene un trabajador real asignado? (nombre vacío o el
+// marcador "(sin asignar)"). Se usa para liberar el turno en el login.
+export function sesionSinTrabajador(s: Sesion): boolean {
+  const t = (s.trabajador ?? "").trim();
+  return t === "" || t === TRABAJADOR_SIN_ASIGNAR;
+}
+
 // Resta n días a una fecha "YYYY-MM-DD" devolviendo otra "YYYY-MM-DD".
 export function diaMenos(dia: string, n: number): string {
   const [y, m, d] = dia.split("-").map(Number);

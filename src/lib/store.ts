@@ -21,7 +21,12 @@ import type {
 } from "./types";
 import { getIsla, PRECIOS_DEFAULT, TRABAJADORES_DEFAULT } from "./config";
 import { aprenderClientes } from "./clientes";
-import { diaActivoParaNuevosTurnos, diaOperativo, preciosDe } from "./calc";
+import {
+  diaActivoParaNuevosTurnos,
+  diaOperativo,
+  preciosDe,
+  sesionSinTrabajador,
+} from "./calc";
 
 const TURNO_ORDEN: TurnoId[] = ["manana", "tarde", "noche"];
 // Versión del esquema de cada documento de sesión en Firestore.
@@ -204,8 +209,27 @@ export const useStore = create<StoreState>()(
 
         const existente = sesiones.find((s) => s.id === id);
         if (existente) {
-          // Ya existe (activa o cerrada): se reutiliza tal cual, nunca se
-          // pisa con datos nuevos en blanco.
+          // Si el turno existe pero está SIN trabajador asignado (p. ej. quedó
+          // así tras mover al trabajador a otra isla), quien lo abre lo RECLAMA:
+          // se le pone su nombre. Conserva odómetros/registros existentes.
+          const { auth } = get();
+          if (!existente.cerrada && sesionSinTrabajador(existente)) {
+            set((st) => ({
+              sesiones: st.sesiones.map((s) =>
+                s.id === id
+                  ? {
+                      ...s,
+                      trabajador: auth?.trabajador || "Admin",
+                      updatedAt: Date.now(),
+                    }
+                  : s
+              ),
+              currentSesionId: id,
+            }));
+            return id;
+          }
+          // Ya existe con trabajador (activa o cerrada): se reutiliza tal cual,
+          // nunca se pisa con datos nuevos en blanco.
           set({ currentSesionId: id });
           return id;
         }

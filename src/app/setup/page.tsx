@@ -9,6 +9,7 @@ import { getSesion } from "@/lib/db";
 import {
   diaActivoParaNuevosTurnos,
   diaOperativo,
+  sesionSinTrabajador,
   turnoHabilitado,
 } from "@/lib/calc";
 import type { TurnoId } from "@/lib/types";
@@ -44,12 +45,15 @@ export default function SetupPage() {
   // Mapa de slots ocupados en el día activo (activos O finalizados): "islaId|turno" -> info
   const ocupados = useMemo(() => {
     const m = new Map<string, { trabajador: string; cerrada: boolean }>();
-    delDiaActivo.forEach((s) =>
+    delDiaActivo.forEach((s) => {
+      // Un turno activo sin trabajador asignado (p. ej. tras mover al trabajador
+      // a otra isla) NO cuenta como ocupado: queda libre para que otro lo tome.
+      if (!s.cerrada && sesionSinTrabajador(s)) return;
       m.set(`${s.islaId}|${s.turno}`, {
         trabajador: s.trabajador,
         cerrada: s.cerrada,
-      })
-    );
+      });
+    });
     return m;
   }, [delDiaActivo]);
 
