@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ISLAS, TURNOS } from "@/lib/config";
 import { useStore } from "@/lib/store";
 import { getSesion } from "@/lib/db";
@@ -29,6 +35,9 @@ export default function SetupPage() {
   const [sel, setSel] = useState<{ islaId: string; turno: TurnoId } | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [verificando, setVerificando] = useState(false);
+  // Cuadro de confirmación: el trabajador debe re-confirmar en qué isla está
+  // físicamente antes de arrancar, para no repetir el error de elegir mal.
+  const [confirmandoIsla, setConfirmandoIsla] = useState(false);
   useEffect(() => setHydrated(true), []);
 
   // Día operativo "activo" del sistema: no depende del reloj, depende de
@@ -126,6 +135,23 @@ export default function SetupPage() {
     } finally {
       setVerificando(false);
     }
+  }
+
+  // El trabajador confirma en qué isla está físicamente. Si coincide con la que
+  // eligió, arranca; si no, se le avisa y vuelve a la selección de isla.
+  function confirmarIsla(islaId: string) {
+    if (!sel) return;
+    if (islaId !== sel.islaId) {
+      const elegida = ISLAS.find((i) => i.id === sel.islaId)?.nombre ?? "";
+      toast.error(
+        `No es tu isla correcta. Habías elegido ${elegida}. Selecciona bien tu isla.`
+      );
+      setConfirmandoIsla(false);
+      setSel(null);
+      return;
+    }
+    setConfirmandoIsla(false);
+    empezar();
   }
 
   return (
@@ -246,7 +272,7 @@ export default function SetupPage() {
           <div className="mt-6 flex justify-end">
             <Button
               disabled={!sel || verificando}
-              onClick={empezar}
+              onClick={() => setConfirmandoIsla(true)}
               className="h-12 bg-gradient-to-r from-amber-500 to-orange-600 px-8 text-base font-bold text-white shadow-lg shadow-orange-900/30 hover:from-amber-400 hover:to-orange-500 disabled:opacity-40"
             >
               {verificando ? "Verificando…" : "Empezar turno"}
@@ -254,6 +280,31 @@ export default function SetupPage() {
           </div>
         )}
       </div>
+
+      {/* Confirmación de isla: el trabajador re-confirma dónde está físicamente */}
+      <Dialog open={confirmandoIsla} onOpenChange={setConfirmandoIsla}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Verifica que estés en la isla correcta</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Toca la isla en la que estás físicamente. Si no coincide con la que
+            elegiste, tendrás que seleccionarla de nuevo.
+          </p>
+          <div className="mt-2 grid gap-2">
+            {ISLAS.map((isla) => (
+              <Button
+                key={isla.id}
+                variant="outline"
+                className="h-12 justify-center text-base font-semibold"
+                onClick={() => confirmarIsla(isla.id)}
+              >
+                {isla.nombre}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
