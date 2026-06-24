@@ -33,10 +33,11 @@ import {
   type Backup,
 } from "@/lib/db";
 import { clientesOrdenados } from "@/lib/clientes";
-import { uid, useStore } from "@/lib/store";
+import { entradaAutomatica, uid, useStore } from "@/lib/store";
 import {
   BALONES,
   CONFIG_PASSWORD,
+  getIsla,
   ISLAS,
   PRODUCTOS,
   TURNOS,
@@ -80,13 +81,53 @@ import {
   DatabaseBackup,
   RotateCcw,
   Save,
+  ArrowLeftRight,
 } from "lucide-react";
 
 // Días operativos a conservar; los más antiguos (ya completos) se borran
 // automáticamente. Ver limpieza en el efecto de retención más abajo.
 const DIAS_A_CONSERVAR = 7;
 
-type Vista = "activos" | "reporte" | "usuarios" | "clientes" | "exportar" | "config";
+type Vista =
+  | "activos"
+  | "reporte"
+  | "mover"
+  | "usuarios"
+  | "clientes"
+  | "exportar"
+  | "config";
+
+// Campos de una sesión que pertenecen al TRABAJADOR (se mueven con él al
+// corregir la isla). Lo que NO está aquí —odómetros y precios— pertenece a la
+// isla física y se queda donde está.
+const CAMPOS_TRABAJADOR = [
+  "pagos",
+  "creditos",
+  "promociones",
+  "descuentos",
+  "gastos",
+  "adelantos",
+  "entregas",
+  "conteos",
+  "balones",
+] as const;
+
+// Extrae el contenido del trabajador (nombre + registros) de una sesión.
+function contenidoTrabajador(s: Sesion) {
+  const out: Record<string, unknown> = { trabajador: s.trabajador };
+  for (const k of CAMPOS_TRABAJADOR) {
+    out[k] = (s as unknown as Record<string, unknown>)[k] ?? [];
+  }
+  return out;
+}
+
+// Contenido vacío para dejar una isla sin trabajador asignado (conservando sus
+// odómetros).
+function contenidoVacio() {
+  const out: Record<string, unknown> = { trabajador: "(sin asignar)" };
+  for (const k of CAMPOS_TRABAJADOR) out[k] = [];
+  return out;
+}
 
 // Dispara la descarga de un blob de forma robusta. El <a> debe agregarse al
 // DOM y el objeto URL revocarse después (no de inmediato), o algunos
@@ -146,6 +187,10 @@ export default function AdminPage() {
   const [nuevoAdminPass, setNuevoAdminPass] = useState("");
   const [confirmandoReset, setConfirmandoReset] = useState(false);
   const [reseteando, setReseteando] = useState(false);
+  // ---- Mover trabajador (corregir isla mal elegida) ----
+  const [moverOrigenId, setMoverOrigenId] = useState<string | null>(null);
+  const [moverDestinoIsla, setMoverDestinoIsla] = useState<string | null>(null);
+  const [confirmandoMover, setConfirmandoMover] = useState(false);
   // ---- Backups (copias de seguridad) ----
   const [backups, setBackups] = useState<Backup[]>([]);
   const [creandoBackup, setCreandoBackup] = useState(false);
@@ -595,6 +640,121 @@ export default function AdminPage() {
     if (s) setSelectedId(s.id);
   }
 
+  // ---- Mover trabajador a la isla correcta ----
+  // Mueve el nombre y TODOS sus registros (pagos, créditos, ventas, gastos…) a
+  // la isla destino. Los odómetros NO se mueven: pertenecen a la isla física y
+  // se quedan donde están (continuos turno a turno). Funciona en dos casos:
+  //   • Intercambio: la isla destino ya tiene a otro trabajador ese turno → se
+  //     intercambian (cada uno conserva el odómetro de su isla).
+  //   • Mover a isla libre: la isla destino no tiene sesión ese turno → se crea
+  //     una con el odómetro propio de esa isla y la de origen queda sin asignar.
+  const moverOrigen = remote.find((s) => s.id === moverOrigenId) ?? null;
+  const moverDestinoId =
+    moverOrigen && moverDestinoIsla
+      ? `${diaOperativo(moverOrigen)}_${moverDestinoIsla}_${moverOrigen.turno}`
+      : null;
+  const moverDestino = moverDestinoId
+    ? remote.find((s) => s.id === moverDestinoId) ?? null
+    : null;
+  // Islas válidas como destino: mismo tipo (líquido/GLP) y distintas a la de
+  // origen, para no mezclar productos/balones incompatibles.
+  const islasDestino = moverOrigen
+    ? ISLAS.filter(
+        (i) =>
+          i.id !== moverOrigen.islaId &&
+          i.tipo === getIsla(moverOrigen.islaId)?.tipo
+      )
+    : [];
+  const destinoCerrado = !!moverDestino?.cerrada;
+
+  function moverTrabajador() {
+    if (!moverOrigen || !moverDestinoIsla) return;
+    if (destinoCerrado) {
+      toast.error("La isla destino ya cerró su turno; no se puede mover.");
+      return;
+    }
+    const dia = diaOperativo(moverOrigen);
+    const turno = moverOrigen.turno;
+    const ahora = Date.now();
+    const islaOrigenNom = getIsla(moverOrigen.islaId)?.nombre ?? moverOrigen.islaId;
+    const islaDestNom = getIsla(moverDestinoIsla)?.nombre ?? moverDestinoIsla;
+
+    if (moverDestino) {
+      // Intercambio: cada sesión conserva su odómetro y precios; se cruzan
+      // nombre + registros.
+      const nuevoOrigen = {
+        ...moverOrigen,
+        ...contenidoTrabajador(moverDestino),
+        updatedAt: ahora,
+      } as Sesion;
+      const nuevoDestino = {
+        ...moverDestino,
+        ...contenidoTrabajador(moverOrigen),
+        updatedAt: ahora,
+      } as Sesion;
+      setRemoteList((prev) =>
+        prev.map((s) =>
+          s.id === nuevoOrigen.id
+            ? nuevoOrigen
+            : s.id === nuevoDestino.id
+            ? nuevoDestino
+            : s
+        )
+      );
+      upsertSesion(nuevoOrigen).catch(() => {});
+      upsertSesion(nuevoDestino).catch(() => {});
+      toast.success(
+        `Intercambiados: ${moverOrigen.trabajador} → ${islaDestNom}, ${moverDestino.trabajador} → ${islaOrigenNom}`
+      );
+    } else {
+      // Mover a isla libre: se crea la sesión destino con el odómetro propio de
+      // esa isla (heredado del turno anterior) y el origen queda sin asignar.
+      const isla = getIsla(moverDestinoIsla);
+      if (!isla) return;
+      const odometros: Record<string, { entrada: number; salida: number }> = {};
+      isla.mangueras.forEach((m) => {
+        odometros[m.id] = {
+          entrada: entradaAutomatica(remote, moverDestinoIsla, turno, m.id, dia),
+          salida: 0,
+        };
+      });
+      const preciosPeriodo =
+        remote.find((s) => diaOperativo(s) === dia && s.turno === turno)
+          ?.precios ?? precios;
+      const nuevoDestino = {
+        id: moverDestinoId!,
+        fecha: dia,
+        islaId: moverDestinoIsla,
+        turno,
+        precios: { ...preciosPeriodo },
+        odometros,
+        ...contenidoTrabajador(moverOrigen),
+        cerrada: false,
+        createdAt: ahora,
+        diaOperativo: dia,
+        updatedAt: ahora,
+        schemaVersion: moverOrigen.schemaVersion,
+      } as Sesion;
+      const nuevoOrigen = {
+        ...moverOrigen,
+        ...contenidoVacio(),
+        updatedAt: ahora,
+      } as Sesion;
+      setRemoteList((prev) => [
+        ...prev.map((s) => (s.id === nuevoOrigen.id ? nuevoOrigen : s)),
+        nuevoDestino,
+      ]);
+      upsertSesion(nuevoDestino).catch(() => {});
+      upsertSesion(nuevoOrigen).catch(() => {});
+      toast.success(
+        `${moverOrigen.trabajador} movido de ${islaOrigenNom} a ${islaDestNom}`
+      );
+    }
+    setConfirmandoMover(false);
+    setMoverOrigenId(null);
+    setMoverDestinoIsla(null);
+  }
+
   if (!hydrated || !auth || auth.rol !== "admin") return null;
 
   return (
@@ -671,6 +831,12 @@ export default function AdminPage() {
               onClick={() => setVista("reporte")}
               icon={<CalendarDays className="h-4 w-4" />}
               label="Reporte del día"
+            />
+            <SideNav
+              activo={vista === "mover"}
+              onClick={() => setVista("mover")}
+              icon={<ArrowLeftRight className="h-4 w-4" />}
+              label="Mover trabajador"
             />
             <SideNav
               activo={vista === "usuarios"}
@@ -814,6 +980,114 @@ export default function AdminPage() {
                 turno se considera listo cuando sus 3 islas cerraron).
               </div>
             )
+          ) : vista === "mover" ? (
+            <div className="max-w-md animate-fade-up rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+              <h3 className="mb-1 flex items-center gap-2 text-base font-bold">
+                <ArrowLeftRight className="h-4 w-4" /> Mover trabajador de isla
+              </h3>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Corrige cuando un trabajador eligió la isla equivocada. Se mueve
+                su nombre y todos sus registros (pagos, créditos, ventas,
+                gastos…) a la isla correcta. <b>Los odómetros NO se mueven</b>:
+                pertenecen a la isla física y se quedan donde están.
+              </p>
+              {activos.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No hay turnos activos para mover.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Trabajador / isla actual</Label>
+                    <Select
+                      value={moverOrigenId ?? ""}
+                      onValueChange={(v) => {
+                        setMoverOrigenId(v);
+                        setMoverDestinoIsla(null);
+                      }}
+                    >
+                      <SelectTrigger className="h-9 w-full">
+                        <SelectValue placeholder="Elige el turno a corregir" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activos.map((s) => {
+                          const isla = getIsla(s.islaId);
+                          return (
+                            <SelectItem key={s.id} value={s.id}>
+                              {isla?.nombre} · {turnoLabel(s.turno)} ·{" "}
+                              {s.trabajador}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {moverOrigen && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Isla correcta (destino)</Label>
+                      <Select
+                        value={moverDestinoIsla ?? ""}
+                        onValueChange={(v) => setMoverDestinoIsla(v)}
+                      >
+                        <SelectTrigger className="h-9 w-full">
+                          <SelectValue placeholder="Elige la isla destino" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {islasDestino.map((i) => (
+                            <SelectItem key={i.id} value={i.id}>
+                              {i.nombre}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {moverOrigen && moverDestinoIsla && (
+                    <div
+                      className={cn(
+                        "rounded-lg border p-3 text-xs",
+                        destinoCerrado
+                          ? "border-red-300 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-950/20 dark:text-red-300"
+                          : "border-sky-300/60 bg-sky-50 text-sky-800 dark:border-sky-500/30 dark:bg-sky-950/20 dark:text-sky-200"
+                      )}
+                    >
+                      {destinoCerrado ? (
+                        <span>
+                          La isla destino ya cerró su turno; no se puede mover
+                          ahí.
+                        </span>
+                      ) : moverDestino ? (
+                        <span>
+                          <b>Intercambio.</b> {moverOrigen.trabajador} pasará a{" "}
+                          <b>{getIsla(moverDestinoIsla)?.nombre}</b> y{" "}
+                          {moverDestino.trabajador} pasará a{" "}
+                          <b>{getIsla(moverOrigen.islaId)?.nombre}</b>. Cada isla
+                          conserva su odómetro.
+                        </span>
+                      ) : (
+                        <span>
+                          <b>Mover a isla libre.</b> {moverOrigen.trabajador}{" "}
+                          pasará a <b>{getIsla(moverDestinoIsla)?.nombre}</b> con
+                          el odómetro propio de esa isla.{" "}
+                          {getIsla(moverOrigen.islaId)?.nombre} quedará sin
+                          asignar (conservando su odómetro).
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <Button
+                    className="w-full"
+                    disabled={!moverOrigen || !moverDestinoIsla || destinoCerrado}
+                    onClick={() => setConfirmandoMover(true)}
+                  >
+                    <ArrowLeftRight className="mr-1 h-4 w-4" /> Mover trabajador
+                  </Button>
+                </div>
+              )}
+            </div>
           ) : vista === "usuarios" ? (
             <div className="max-w-md rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
               <h3 className="mb-1 text-base font-bold">Gestión de usuarios</h3>
@@ -1377,6 +1651,41 @@ export default function AdminPage() {
                 ? "Restaurando…"
                 : "Sí, restaurar"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmandoMover} onOpenChange={setConfirmandoMover}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Mover al trabajador de isla?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {moverOrigen && moverDestinoIsla ? (
+              moverDestino ? (
+                <>
+                  Se intercambiarán <b>{moverOrigen.trabajador}</b> y{" "}
+                  <b>{moverDestino.trabajador}</b> entre{" "}
+                  <b>{getIsla(moverOrigen.islaId)?.nombre}</b> y{" "}
+                  <b>{getIsla(moverDestinoIsla)?.nombre}</b>, con todos sus
+                  registros. Los odómetros de cada isla no se tocan.
+                </>
+              ) : (
+                <>
+                  Se moverá <b>{moverOrigen.trabajador}</b> (con todos sus
+                  registros) de{" "}
+                  <b>{getIsla(moverOrigen.islaId)?.nombre}</b> a{" "}
+                  <b>{getIsla(moverDestinoIsla)?.nombre}</b>. Los odómetros de
+                  cada isla no se tocan.
+                </>
+              )
+            ) : null}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmandoMover(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={moverTrabajador}>Sí, mover</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

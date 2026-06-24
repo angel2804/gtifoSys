@@ -120,7 +120,7 @@ interface StoreState {
 
 // Busca la salida del turno anterior para la misma isla/manguera y la usa
 // como entrada automática.
-function entradaAutomatica(
+export function entradaAutomatica(
   sesiones: Sesion[],
   islaId: string,
   turno: TurnoId,
