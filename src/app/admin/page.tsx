@@ -121,14 +121,6 @@ function contenidoTrabajador(s: Sesion) {
   return out;
 }
 
-// Contenido vacío para dejar una isla sin trabajador asignado (conservando sus
-// odómetros).
-function contenidoVacio() {
-  const out: Record<string, unknown> = { trabajador: "(sin asignar)" };
-  for (const k of CAMPOS_TRABAJADOR) out[k] = [];
-  return out;
-}
-
 // Dispara la descarga de un blob de forma robusta. El <a> debe agregarse al
 // DOM y el objeto URL revocarse después (no de inmediato), o algunos
 // navegadores bloquean la descarga pidiendo permiso ("se necesita permiso
@@ -667,7 +659,7 @@ export default function AdminPage() {
     : [];
   const destinoCerrado = !!moverDestino?.cerrada;
 
-  function moverTrabajador() {
+  async function moverTrabajador() {
     if (!moverOrigen || !moverDestinoIsla) return;
     if (destinoCerrado) {
       toast.error("La isla destino ya cerró su turno; no se puede mover.");
@@ -708,7 +700,10 @@ export default function AdminPage() {
       );
     } else {
       // Mover a isla libre: se crea la sesión destino con el odómetro propio de
-      // esa isla (heredado del turno anterior) y el origen queda sin asignar.
+      // esa isla (heredado del turno anterior) y la sesión de origen se ELIMINA
+      // por completo: como el trabajador nunca trabajó ahí, ese turno queda como
+      // si nunca se hubiera abierto. El odómetro de la isla origen no se rompe:
+      // el próximo turno hereda la última salida real (anterior a este error).
       const isla = getIsla(moverDestinoIsla);
       if (!isla) return;
       const odometros: Record<string, { entrada: number; salida: number }> = {};
@@ -735,17 +730,12 @@ export default function AdminPage() {
         updatedAt: ahora,
         schemaVersion: moverOrigen.schemaVersion,
       } as Sesion;
-      const nuevoOrigen = {
-        ...moverOrigen,
-        ...contenidoVacio(),
-        updatedAt: ahora,
-      } as Sesion;
       setRemoteList((prev) => [
-        ...prev.map((s) => (s.id === nuevoOrigen.id ? nuevoOrigen : s)),
+        ...prev.filter((s) => s.id !== moverOrigen.id),
         nuevoDestino,
       ]);
       upsertSesion(nuevoDestino).catch(() => {});
-      upsertSesion(nuevoOrigen).catch(() => {});
+      deleteSesion(moverOrigen.id).catch(() => {});
       toast.success(
         `${moverOrigen.trabajador} movido de ${islaOrigenNom} a ${islaDestNom}`
       );
@@ -1070,9 +1060,10 @@ export default function AdminPage() {
                         <span>
                           <b>Mover a isla libre.</b> {moverOrigen.trabajador}{" "}
                           pasará a <b>{getIsla(moverDestinoIsla)?.nombre}</b> con
-                          el odómetro propio de esa isla.{" "}
-                          {getIsla(moverOrigen.islaId)?.nombre} quedará sin
-                          asignar (conservando su odómetro).
+                          el odómetro propio de esa isla. El turno de{" "}
+                          {getIsla(moverOrigen.islaId)?.nombre} se eliminará
+                          (como si nunca se hubiera abierto ahí); su odómetro no
+                          se rompe.
                         </span>
                       )}
                     </div>
@@ -1685,7 +1676,7 @@ export default function AdminPage() {
             <Button variant="outline" onClick={() => setConfirmandoMover(false)}>
               Cancelar
             </Button>
-            <Button onClick={moverTrabajador}>Sí, mover</Button>
+            <Button onClick={() => moverTrabajador()}>Sí, mover</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
