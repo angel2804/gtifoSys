@@ -236,25 +236,17 @@ export function ReporteDiaVista({
     (r: Omit<RowAny, "id">) =>
       fn(r as unknown as Omit<A, "id">);
 
-  // Cuadre de efectivo por trabajador: lo que CADA encargado entregó (entregas
-  // que él mismo registró) vs lo que el ADMIN contó en físico (conteos). La
-  // diferencia ideal es 0; positiva = sobrante, negativa = faltante.
-  const filasEncargado = filtradas.map((s) => {
-    const entregado = (s.entregas ?? []).reduce((a, e) => a + e.monto, 0);
-    const contado = (s.conteos ?? []).reduce((a, c) => a + c.monto, 0);
-    return {
-      sesion: s,
-      islaNombre: getIsla(s.islaId)?.nombre ?? s.islaId,
-      entregado,
-      contado,
-      diferencia: contado - entregado,
-    };
-  });
-  const totalContado = filasEncargado.reduce((a, f) => a + f.contado, 0);
-  const diferenciaTotal = totalContado - rep.totalEntregado;
-  // Cuadre del turno: lo que el sistema dice que debe haber en caja vs lo que el
-  // admin contó FÍSICAMENTE. Positivo = falta efectivo; negativo = sobra.
-  const cuadreTurno = rep.efectivoAEntregar - totalContado;
+  // Total contado en físico por el admin (conteos de todas las sesiones).
+  const totalContado = filtradas.reduce(
+    (a, s) => a + (s.conteos ?? []).reduce((x, c) => x + c.monto, 0),
+    0
+  );
+  // Dos cuadres contra el efectivo que el sistema dice que debe haber en caja:
+  //  - según los trabajadores: lo que ellos declararon entregar.
+  //  - según el admin: lo que el admin contó físicamente.
+  // Positivo = falta efectivo; negativo = sobra.
+  const cuadreTrabajadores = rep.efectivoAEntregar - rep.totalEntregado;
+  const cuadreAdmin = rep.efectivoAEntregar - totalContado;
 
   const cards = [
     {
@@ -598,10 +590,12 @@ export function ReporteDiaVista({
         ))}
       </div>
 
-      {/* Cuadre en dos mitades: izquierda = venta y deducciones; derecha =
-          efectivo entregado por cada trabajador vs lo contado por el admin. */}
+      {/* Cuadre en dos mitades: ambas parten del mismo "Efectivo a entregar"
+          (lo que el sistema dice que debe haber en caja). La izquierda lo
+          verifica contra lo que declararon los TRABAJADORES; la derecha contra
+          lo que el ADMIN contó físicamente. */}
       <div className="grid gap-2 md:grid-cols-2">
-        {/* Mitad izquierda: venta total y deducciones */}
+        {/* Mitad izquierda: venta, deducciones y cuadre según trabajadores */}
         <div className="rounded-xl border bg-card p-4 shadow-sm">
           <div className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             Venta y deducciones
@@ -624,147 +618,64 @@ export function ReporteDiaVista({
               {soles(rep.efectivoAEntregar)}
             </span>
           </div>
+          <div className="mt-1">
+            <Fila
+              label="− Entregado por trabajadores"
+              valor={soles(rep.totalEntregado)}
+              neg
+            />
+          </div>
+          <CuadreBloque diferencia={cuadreTrabajadores} />
         </div>
 
-        {/* Mitad derecha: entregas por trabajador y conteo físico del admin */}
+        {/* Mitad derecha: cuadre según el conteo físico del admin */}
         <div className="rounded-xl border bg-card p-4 shadow-sm">
           <div className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-            Entregas vs efectivo contado
+            Efectivo contado por el admin
           </div>
-          <div className="overflow-hidden rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead className="h-7 px-2 font-bold">Trabajador</TableHead>
-                  <TableHead className="h-7 px-2 text-right font-bold">Entregó</TableHead>
-                  <TableHead className="h-7 px-2 text-right font-bold">Contado</TableHead>
-                  <TableHead className="h-7 px-2 text-right font-bold">Dif.</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filasEncargado.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={4} className="px-2 py-4 text-center text-muted-foreground">
-                      Sin trabajadores en este turno
-                    </TableCell>
-                  </TableRow>
-                )}
-                {filasEncargado.map((f) => (
-                  <TableRow key={f.sesion.id}>
-                    <TableCell className="px-2 py-1">
-                      <div className="font-semibold">{f.sesion.trabajador}</div>
-                      <div className="text-[10px] text-muted-foreground">{f.islaNombre}</div>
-                    </TableCell>
-                    <TableCell className="px-2 py-1 text-right tabular-nums">
-                      {soles(f.entregado)}
-                    </TableCell>
-                    <TableCell className="px-2 py-1 text-right tabular-nums">
-                      {soles(f.contado)}
-                    </TableCell>
-                    <TableCell
-                      className={cn(
-                        "px-2 py-1 text-right font-semibold tabular-nums",
-                        Math.abs(f.diferencia) < 0.005
-                          ? "text-green-600"
-                          : f.diferencia > 0
-                            ? "text-sky-600"
-                            : "text-red-500"
-                      )}
-                    >
-                      {soles(f.diferencia)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                <TableRow className="bg-muted font-bold">
-                  <TableCell className="px-2 py-1 text-right">TOTAL</TableCell>
-                  <TableCell className="px-2 py-1 text-right tabular-nums">
-                    {soles(rep.totalEntregado)}
-                  </TableCell>
-                  <TableCell className="px-2 py-1 text-right tabular-nums">
-                    {soles(totalContado)}
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      "px-2 py-1 text-right tabular-nums",
-                      Math.abs(diferenciaTotal) < 0.005
-                        ? "text-green-600"
-                        : diferenciaTotal > 0
-                          ? "text-sky-600"
-                          : "text-red-500"
-                    )}
-                  >
-                    {soles(diferenciaTotal)}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Veredicto de la comparación contado (admin) vs entregado (sistema) */}
-          <div
-            className={cn(
-              "mt-2 flex items-center justify-between rounded-lg px-3 py-2",
-              Math.abs(diferenciaTotal) < 0.005
-                ? "bg-green-500/15"
-                : diferenciaTotal > 0
-                  ? "bg-sky-500/15"
-                  : "bg-red-500/15"
-            )}
-          >
-            <span className="text-sm font-semibold">
-              {Math.abs(diferenciaTotal) < 0.005
-                ? "Cuadra ✓"
-                : diferenciaTotal > 0
-                  ? "Sobrante (contado de más)"
-                  : "Faltante (contado de menos)"}
-            </span>
-            <span
-              className={cn(
-                "text-lg font-bold",
-                Math.abs(diferenciaTotal) < 0.005
-                  ? "text-green-600"
-                  : diferenciaTotal > 0
-                    ? "text-sky-600"
-                    : "text-red-500"
-              )}
-            >
-              {soles(Math.abs(diferenciaTotal))}
+          <div className="flex items-center justify-between rounded-lg bg-primary/10 px-3 py-2">
+            <span className="text-sm font-semibold">Efectivo a entregar</span>
+            <span className="text-lg font-bold text-primary">
+              {soles(rep.efectivoAEntregar)}
             </span>
           </div>
-
-          {/* Cuadre de turno: efectivo a entregar (sistema) vs lo contado en
-              físico. Un saldo > 0 = falta efectivo; < 0 = sobra. */}
-          <div
-            className={cn(
-              "mt-1 flex items-center justify-between rounded-lg px-3 py-2",
-              cuadreTurno > 0.005 ? "bg-amber-500/15" : "bg-green-500/15"
-            )}
-          >
-            <span className="text-sm font-semibold">
-              {Math.abs(cuadreTurno) < 0.005
-                ? "Cuadra ✓"
-                : cuadreTurno > 0
-                  ? "Falta"
-                  : "Sobra"}
-            </span>
-            <span
-              className={cn(
-                "text-lg font-bold",
-                cuadreTurno > 0.005 ? "text-amber-600" : "text-sky-600"
-              )}
-            >
-              {soles(Math.abs(cuadreTurno))}
-            </span>
+          <div className="mt-1">
+            <Fila
+              label="− Contado por el admin"
+              valor={soles(totalContado)}
+              neg
+            />
           </div>
-
-          {/* Aviso cuando el descuadre del turno es de 10 soles o más */}
-          {Math.abs(cuadreTurno) >= 10 && (
-            <div className="mt-1 rounded-lg bg-red-500/10 px-3 py-2 text-center text-xs font-medium text-red-500">
-              ⚠ El cuadre del turno no cuadra con el cuadre físico
-            </div>
-          )}
+          <CuadreBloque diferencia={cuadreAdmin} />
         </div>
       </div>
+    </div>
+  );
+}
+
+// Bloque de veredicto del cuadre: Falta (naranja) si la diferencia > 0,
+// Sobra (celeste) si < 0, Cuadra (verde) si es ~0.
+function CuadreBloque({ diferencia }: { diferencia: number }) {
+  const cuadra = Math.abs(diferencia) < 0.005;
+  const falta = diferencia > 0.005;
+  return (
+    <div
+      className={cn(
+        "mt-1 flex items-center justify-between rounded-lg px-3 py-2",
+        falta ? "bg-amber-500/15" : "bg-green-500/15"
+      )}
+    >
+      <span className="text-sm font-semibold">
+        {cuadra ? "Cuadra ✓" : falta ? "Falta" : "Sobra"}
+      </span>
+      <span
+        className={cn(
+          "text-lg font-bold",
+          falta ? "text-amber-600" : "text-sky-600"
+        )}
+      >
+        {soles(Math.abs(diferencia))}
+      </span>
     </div>
   );
 }
