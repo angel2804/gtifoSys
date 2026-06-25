@@ -462,13 +462,13 @@ export function llenarHojaMadre(
   setSoles(`L${mapRow(63)}`, totalContado);
   const diferencia = r2(totalContado - entregar);
   setSoles(`L${mapRow(64)}`, diferencia);
-  const cuadra = Math.abs(diferencia) <= EPS;
   ws.getCell(`M${mapRow(64)}`).value =
     diferencia < -EPS ? "FALTA" : diferencia > EPS ? "SOBRA" : null;
-  // Advertencia bajo la diferencia cuando el físico no coincide con el turno.
-  ws.getCell(`B${mapRow(65)}`).value = cuadra
-    ? null
-    : "⚠ El dinero en físico no cuadra con el turno";
+  // Advertencia bajo la diferencia cuando el descuadre es de 10 soles o más.
+  ws.getCell(`B${mapRow(65)}`).value =
+    Math.abs(diferencia) >= 10
+      ? "⚠ El dinero en físico no cuadra con el turno"
+      : null;
 
   // --- Calibración: solo se reflejan los precios (lo único que existe en el sistema) ---
   for (const { producto, puCol } of PRODUCTO_COLS) {

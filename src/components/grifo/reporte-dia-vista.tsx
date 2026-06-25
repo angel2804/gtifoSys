@@ -731,7 +731,14 @@ export function ReporteDiaVista({
 
           {/* Cuadre de turno: efectivo a entregar (sistema) vs lo entregado.
               Un saldo > 0 = falta entregar; < 0 = se entregó de más. */}
-          <div className="mt-1 flex items-center justify-between rounded-lg bg-amber-500/15 px-3 py-2">
+          <div
+            className={cn(
+              "mt-1 flex items-center justify-between rounded-lg px-3 py-2",
+              rep.saldoPendiente > 0.005
+                ? "bg-amber-500/15"
+                : "bg-green-500/15"
+            )}
+          >
             <span className="text-sm font-semibold">
               {Math.abs(rep.saldoPendiente) < 0.005
                 ? "Cuadra ✓"
@@ -742,15 +749,15 @@ export function ReporteDiaVista({
             <span
               className={cn(
                 "text-lg font-bold",
-                rep.saldoPendiente > 0.005 ? "text-amber-600" : "text-green-600"
+                rep.saldoPendiente > 0.005 ? "text-amber-600" : "text-sky-600"
               )}
             >
               {soles(Math.abs(rep.saldoPendiente))}
             </span>
           </div>
 
-          {/* Aviso cuando el cuadre del sistema no coincide con el físico */}
-          {Math.abs(rep.saldoPendiente) >= 0.005 && (
+          {/* Aviso cuando el descuadre del turno es de 10 soles o más */}
+          {Math.abs(rep.saldoPendiente) >= 10 && (
             <div className="mt-1 rounded-lg bg-red-500/10 px-3 py-2 text-center text-xs font-medium text-red-500">
               ⚠ El cuadre del turno no cuadra con el cuadre físico
             </div>
