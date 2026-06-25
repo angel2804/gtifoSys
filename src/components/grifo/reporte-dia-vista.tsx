@@ -252,6 +252,9 @@ export function ReporteDiaVista({
   });
   const totalContado = filasEncargado.reduce((a, f) => a + f.contado, 0);
   const diferenciaTotal = totalContado - rep.totalEntregado;
+  // Cuadre del turno: lo que el sistema dice que debe haber en caja vs lo que el
+  // admin contó FÍSICAMENTE. Positivo = falta efectivo; negativo = sobra.
+  const cuadreTurno = rep.efectivoAEntregar - totalContado;
 
   const cards = [
     {
@@ -729,35 +732,33 @@ export function ReporteDiaVista({
             </span>
           </div>
 
-          {/* Cuadre de turno: efectivo a entregar (sistema) vs lo entregado.
-              Un saldo > 0 = falta entregar; < 0 = se entregó de más. */}
+          {/* Cuadre de turno: efectivo a entregar (sistema) vs lo contado en
+              físico. Un saldo > 0 = falta efectivo; < 0 = sobra. */}
           <div
             className={cn(
               "mt-1 flex items-center justify-between rounded-lg px-3 py-2",
-              rep.saldoPendiente > 0.005
-                ? "bg-amber-500/15"
-                : "bg-green-500/15"
+              cuadreTurno > 0.005 ? "bg-amber-500/15" : "bg-green-500/15"
             )}
           >
             <span className="text-sm font-semibold">
-              {Math.abs(rep.saldoPendiente) < 0.005
+              {Math.abs(cuadreTurno) < 0.005
                 ? "Cuadra ✓"
-                : rep.saldoPendiente > 0
+                : cuadreTurno > 0
                   ? "Falta"
                   : "Sobra"}
             </span>
             <span
               className={cn(
                 "text-lg font-bold",
-                rep.saldoPendiente > 0.005 ? "text-amber-600" : "text-sky-600"
+                cuadreTurno > 0.005 ? "text-amber-600" : "text-sky-600"
               )}
             >
-              {soles(Math.abs(rep.saldoPendiente))}
+              {soles(Math.abs(cuadreTurno))}
             </span>
           </div>
 
           {/* Aviso cuando el descuadre del turno es de 10 soles o más */}
-          {Math.abs(rep.saldoPendiente) >= 10 && (
+          {Math.abs(cuadreTurno) >= 10 && (
             <div className="mt-1 rounded-lg bg-red-500/10 px-3 py-2 text-center text-xs font-medium text-red-500">
               ⚠ El cuadre del turno no cuadra con el cuadre físico
             </div>
