@@ -320,8 +320,30 @@ export function llenarHojaMadre(
   }
 
   // --- CREDITOS (filas 20..36, o más) ---
-  r = mapRow(20);
+  // Se agrupan por cliente para que todos sus créditos salgan juntos, y los
+  // grupos se ordenan por cantidad de créditos (de mayor a menor): primero el
+  // cliente con más nombres, luego el siguiente, etc. Dentro de cada grupo se
+  // conserva el orden original.
+  const conteoCliente = new Map<string, number>();
   for (const c of creditos) {
+    conteoCliente.set(c.cliente, (conteoCliente.get(c.cliente) ?? 0) + 1);
+  }
+  const ordenCliente = new Map<string, number>();
+  [...conteoCliente.keys()].forEach((cliente, i) => ordenCliente.set(cliente, i));
+  const creditosOrdenados = creditos
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => {
+      const ca = conteoCliente.get(a.c.cliente) ?? 0;
+      const cb = conteoCliente.get(b.c.cliente) ?? 0;
+      if (cb !== ca) return cb - ca; // grupo más grande primero
+      const oa = ordenCliente.get(a.c.cliente) ?? 0;
+      const ob = ordenCliente.get(b.c.cliente) ?? 0;
+      if (oa !== ob) return oa - ob; // mantener grupos contiguos
+      return a.i - b.i; // estable dentro del grupo
+    })
+    .map((x) => x.c);
+  r = mapRow(20);
+  for (const c of creditosOrdenados) {
     const grupo = PRODUCTO_COLS.find((g) => g.producto === c.producto);
     if (!grupo) continue;
     ws.getCell(`B${r}`).value = c.cliente;
