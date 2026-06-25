@@ -236,6 +236,16 @@ export function ReporteDiaVista({
     (r: Omit<RowAny, "id">) =>
       fn(r as unknown as Omit<A, "id">);
 
+  // Galones por producto desglosados: créditos, descuentos y promociones
+  const creditosGal = new Map<string, number>();
+  const descuentosGal = new Map<string, number>();
+  const promoGal = new Map<string, number>();
+  filtradas.forEach((s) => {
+    s.creditos.forEach((c) => creditosGal.set(c.producto, (creditosGal.get(c.producto) ?? 0) + c.galones));
+    s.descuentos.forEach((d) => descuentosGal.set(d.producto, (descuentosGal.get(d.producto) ?? 0) + d.galones));
+    s.promociones.forEach((p) => promoGal.set(p.producto, (promoGal.get(p.producto) ?? 0) + p.galones));
+  });
+
   // Total contado en físico por el admin (conteos de todas las sesiones).
   const totalContado = filtradas.reduce(
     (a, s) => a + (s.conteos ?? []).reduce((x, c) => x + c.monto, 0),
@@ -649,6 +659,61 @@ export function ReporteDiaVista({
           <CuadreBloque diferencia={cuadreAdmin} />
         </div>
       </div>
+
+      {/* Venta a precio normal por producto */}
+      {rep.porProducto.length > 0 && (
+        <div className="rounded-xl border bg-card p-4 shadow-sm">
+          <div className="mb-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+            Venta a precio normal
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b text-[10px] text-muted-foreground">
+                  <th className="pb-1 text-left font-semibold">Producto</th>
+                  <th className="pb-1 text-right font-semibold">Total gal.</th>
+                  <th className="pb-1 text-right font-semibold text-red-400">− Créditos</th>
+                  <th className="pb-1 text-right font-semibold text-red-400">− Descuentos</th>
+                  <th className="pb-1 text-right font-semibold text-red-400">− Promos</th>
+                  <th className="pb-1 text-right font-semibold text-sky-400">= Precio normal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rep.porProducto
+                  .filter((f) => f.producto !== "glp")
+                  .map((f) => {
+                    const cred = creditosGal.get(f.producto) ?? 0;
+                    const desc = descuentosGal.get(f.producto) ?? 0;
+                    const promo = promoGal.get(f.producto) ?? 0;
+                    const normal = Math.max(0, f.galones - cred - desc - promo);
+                    return (
+                      <tr key={f.producto} className="border-b last:border-0">
+                        <td className="py-1">
+                          <span className={cn("rounded px-1.5 py-0.5 font-semibold", PRODUCTO_COLOR[f.producto])}>
+                            {PRODUCTOS[f.producto]}
+                          </span>
+                        </td>
+                        <td className="py-1 text-right tabular-nums">{f.galones.toFixed(3)}</td>
+                        <td className="py-1 text-right tabular-nums text-red-400">
+                          {cred > 0 ? `−${cred.toFixed(3)}` : "—"}
+                        </td>
+                        <td className="py-1 text-right tabular-nums text-red-400">
+                          {desc > 0 ? `−${desc.toFixed(3)}` : "—"}
+                        </td>
+                        <td className="py-1 text-right tabular-nums text-red-400">
+                          {promo > 0 ? `−${promo.toFixed(3)}` : "—"}
+                        </td>
+                        <td className="py-1 text-right tabular-nums font-bold text-sky-400">
+                          {normal.toFixed(3)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
