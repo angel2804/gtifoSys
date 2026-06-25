@@ -729,18 +729,34 @@ export function ReporteDiaVista({
             </span>
           </div>
 
-          {/* Saldo pendiente: efectivo a entregar vs lo ya entregado al admin */}
+          {/* Cuadre de turno: efectivo a entregar (sistema) vs lo entregado.
+              Un saldo > 0 = falta entregar; < 0 = se entregó de más. */}
           <div className="mt-1 flex items-center justify-between rounded-lg bg-amber-500/15 px-3 py-2">
-            <span className="text-sm font-semibold">Saldo pendiente</span>
+            <span className="text-sm font-semibold">
+              {Math.abs(rep.saldoPendiente) < 0.005
+                ? "Cuadra ✓"
+                : rep.saldoPendiente > 0
+                  ? "Falta"
+                  : "Sobra"}
+            </span>
             <span
               className={cn(
                 "text-lg font-bold",
-                rep.saldoPendiente > 0.001 ? "text-amber-600" : "text-green-600"
+                Math.abs(rep.saldoPendiente) < 0.005
+                  ? "text-green-600"
+                  : "text-amber-600"
               )}
             >
-              {soles(rep.saldoPendiente)}
+              {soles(Math.abs(rep.saldoPendiente))}
             </span>
           </div>
+
+          {/* Aviso cuando el cuadre del sistema no coincide con el físico */}
+          {Math.abs(rep.saldoPendiente) >= 0.005 && (
+            <div className="mt-1 rounded-lg bg-red-500/10 px-3 py-2 text-center text-xs font-medium text-red-500">
+              ⚠ El cuadre del turno no cuadra con el cuadre físico
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -448,14 +448,27 @@ export function llenarHojaMadre(
   );
   setSoles(`L${mapRow(61)}`, totalDeducciones);
 
-  // --- ENTREGAR: se usa el cálculo ya validado del sistema ---
-  const entregar = r2(rep.efectivoAEntregar);
+  // --- ENTREGAR vs ENTREGADO: se compara lo que los griferos entregaron contra
+  // lo que el encargado contó físicamente (conteos). Es la misma cuadra que ve
+  // el admin en pantalla: el faltante/sobrante real de caja del turno. ---
+  const entregar = r2(rep.totalEntregado);
   setSoles(`L${mapRow(62)}`, entregar);
-  setSoles(`L${mapRow(63)}`, r2(rep.totalEntregado));
-  const diferencia = r2(rep.totalEntregado - entregar);
+  const totalContado = r2(
+    sesiones.reduce(
+      (a, s) => a + (s.conteos ?? []).reduce((x, c) => x + c.monto, 0),
+      0
+    )
+  );
+  setSoles(`L${mapRow(63)}`, totalContado);
+  const diferencia = r2(totalContado - entregar);
   setSoles(`L${mapRow(64)}`, diferencia);
+  const cuadra = Math.abs(diferencia) <= EPS;
   ws.getCell(`M${mapRow(64)}`).value =
     diferencia < -EPS ? "FALTA" : diferencia > EPS ? "SOBRA" : null;
+  // Advertencia bajo la diferencia cuando el físico no coincide con el turno.
+  ws.getCell(`B${mapRow(65)}`).value = cuadra
+    ? null
+    : "⚠ El dinero en físico no cuadra con el turno";
 
   // --- Calibración: solo se reflejan los precios (lo único que existe en el sistema) ---
   for (const { producto, puCol } of PRODUCTO_COLS) {
