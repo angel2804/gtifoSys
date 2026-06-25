@@ -742,9 +742,7 @@ export function ReporteDiaVista({
             <span
               className={cn(
                 "text-lg font-bold",
-                Math.abs(rep.saldoPendiente) < 0.005
-                  ? "text-green-600"
-                  : "text-amber-600"
+                rep.saldoPendiente > 0.005 ? "text-amber-600" : "text-green-600"
               )}
             >
               {soles(Math.abs(rep.saldoPendiente))}
