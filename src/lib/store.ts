@@ -43,6 +43,10 @@ export function hoy(): string {
 interface AuthState {
   rol: Rol;
   trabajador: string; // nombre, vacío para admin
+  // Id del admin que inició sesión (para aplicar sus permisos). `null` = entró
+  // con la contraseña maestra (acceso total). `undefined`/ausente en sesiones
+  // viejas se trata como maestra por compatibilidad.
+  adminId?: string | null;
 }
 
 interface StoreState {
@@ -65,7 +69,7 @@ interface StoreState {
   // (sin distinguir mayúsculas/acentos). Devuelve true si la lista cambió.
   aprenderClientes: (nombres: (string | undefined)[]) => boolean;
 
-  loginAdmin: () => void;
+  loginAdmin: (adminId?: string | null) => void;
   loginTrabajador: (nombre: string) => void;
   logout: () => void;
 
@@ -192,7 +196,8 @@ export const useStore = create<StoreState>()(
         return true;
       },
 
-      loginAdmin: () => set({ auth: { rol: "admin", trabajador: "" } }),
+      loginAdmin: (adminId = null) =>
+        set({ auth: { rol: "admin", trabajador: "", adminId } }),
       loginTrabajador: (nombre) =>
         set({ auth: { rol: "trabajador", trabajador: nombre } }),
       logout: () => set({ auth: null, currentSesionId: null }),

@@ -1,4 +1,22 @@
-import type { BalonTipo, Isla, Precios, ProductoId, TurnoId } from "./types";
+import type { BalonTipo, Isla, Permiso, Precios, ProductoId, TurnoId } from "./types";
+
+// Catálogo de permisos seleccionables al crear/editar un administrador. El
+// orden define cómo aparecen en Configuraciones y qué vista se abre por
+// defecto si la actual no está permitida.
+export const PERMISOS: { id: Permiso; label: string }[] = [
+  { id: "activos", label: "Turnos activos" },
+  { id: "reporte", label: "Reporte del día" },
+  { id: "venta-normal", label: "Venta a precio normal (dentro del reporte)" },
+  { id: "mover", label: "Mover trabajador" },
+  { id: "usuarios", label: "Usuarios" },
+  { id: "clientes", label: "Clientes" },
+  { id: "exportar", label: "Exportar" },
+  { id: "config", label: "Configuraciones" },
+];
+
+// Lista de todos los permisos (acceso total). Usado como valor por defecto
+// para la contraseña maestra y para admins sin `permisos` definidos.
+export const PERMISOS_TODOS: Permiso[] = PERMISOS.map((p) => p.id);
 
 // Trabajadores por defecto (editables por el admin; ver store.trabajadores)
 export const TRABAJADORES_DEFAULT = ["Angel", "Lenin", "Miguel"];

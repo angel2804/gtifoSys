@@ -39,6 +39,8 @@ import {
   CONFIG_PASSWORD,
   getIsla,
   ISLAS,
+  PERMISOS,
+  PERMISOS_TODOS,
   PRODUCTOS,
   TURNOS,
   turnoLabel,
@@ -53,7 +55,7 @@ import {
   turnosCompletosDeDia,
   turnosConAlgunaIslaCerrada,
 } from "@/lib/calc";
-import type { Admin, PrecioKey, Precios, Sesion, TurnoId } from "@/lib/types";
+import type { Admin, Permiso, PrecioKey, Precios, Sesion, TurnoId } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { SesionVista } from "@/components/grifo/sesion-vista";
 import { ReporteDiaVista } from "@/components/grifo/reporte-dia-vista";
@@ -177,6 +179,8 @@ export default function AdminPage() {
   const [configUnlocked, setConfigUnlocked] = useState(false);
   const [nuevoAdminNombre, setNuevoAdminNombre] = useState("");
   const [nuevoAdminPass, setNuevoAdminPass] = useState("");
+  const [nuevoAdminPermisos, setNuevoAdminPermisos] =
+    useState<Permiso[]>(PERMISOS_TODOS);
   const [confirmandoReset, setConfirmandoReset] = useState(false);
   const [reseteando, setReseteando] = useState(false);
   // ---- Mover trabajador (corregir isla mal elegida) ----
@@ -193,6 +197,29 @@ export default function AdminPage() {
   useEffect(() => {
     if (hydrated && (!auth || auth.rol !== "admin")) router.replace("/");
   }, [hydrated, auth, router]);
+
+  // ---- Permisos del admin que inició sesión ----
+  // adminId null/undefined = contraseña maestra → acceso total. Un admin sin
+  // `permisos` definidos (creado antes de existir esta función) también ve
+  // todo, por compatibilidad.
+  const permisos: Permiso[] = useMemo(() => {
+    const id = auth?.adminId;
+    if (id == null) return PERMISOS_TODOS;
+    const a = admins.find((x) => x.id === id);
+    return a?.permisos ?? PERMISOS_TODOS;
+  }, [auth?.adminId, admins]);
+  const can = (p: Permiso) => permisos.includes(p);
+
+  // Si la vista actual no está permitida (p. ej. tras cargar permisos), saltar
+  // a la primera vista que sí lo esté. "venta-normal" no es una vista propia.
+  useEffect(() => {
+    if (can(vista as Permiso)) return;
+    const primera = PERMISOS_TODOS.find(
+      (p) => p !== "venta-normal" && permisos.includes(p)
+    );
+    if (primera) setVista(primera as Vista);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permisos, vista]);
 
   // Suscripción en vivo a los últimos 60 días operativos (turnos activos +
   // días recientes para reporte/export), vía Supabase Realtime.
@@ -349,13 +376,30 @@ export default function AdminPage() {
       toast.error("Ya existe un administrador con ese nombre");
       return;
     }
-    persistAdmins([...admins, { id: uid(), nombre, password: pass }]);
+    persistAdmins([
+      ...admins,
+      { id: uid(), nombre, password: pass, permisos: nuevoAdminPermisos },
+    ]);
     setNuevoAdminNombre("");
     setNuevoAdminPass("");
+    setNuevoAdminPermisos(PERMISOS_TODOS);
     toast.success("Administrador creado");
   }
   function quitarAdmin(id: string) {
     persistAdmins(admins.filter((a) => a.id !== id));
+  }
+  // Activa/desactiva un permiso para un admin ya creado y lo guarda.
+  function togglePermisoAdmin(id: string, permiso: Permiso) {
+    persistAdmins(
+      admins.map((a) => {
+        if (a.id !== id) return a;
+        const actuales = a.permisos ?? PERMISOS_TODOS;
+        const permisos = actuales.includes(permiso)
+          ? actuales.filter((p) => p !== permiso)
+          : [...actuales, permiso];
+        return { ...a, permisos };
+      })
+    );
   }
 
   // ---- Logo de la empresa ----
@@ -810,48 +854,62 @@ export default function AdminPage() {
         {/* Sidebar */}
         <aside className="w-56 shrink-0 border-r bg-sidebar p-3">
           <nav className="mb-3 space-y-1">
-            <SideNav
-              activo={vista === "activos"}
-              onClick={() => setVista("activos")}
-              icon={<Activity className="h-4 w-4" />}
-              label="Turnos activos"
-            />
-            <SideNav
-              activo={vista === "reporte"}
-              onClick={() => setVista("reporte")}
-              icon={<CalendarDays className="h-4 w-4" />}
-              label="Reporte del día"
-            />
-            <SideNav
-              activo={vista === "mover"}
-              onClick={() => setVista("mover")}
-              icon={<ArrowLeftRight className="h-4 w-4" />}
-              label="Mover trabajador"
-            />
-            <SideNav
-              activo={vista === "usuarios"}
-              onClick={() => setVista("usuarios")}
-              icon={<Users className="h-4 w-4" />}
-              label="Usuarios"
-            />
-            <SideNav
-              activo={vista === "clientes"}
-              onClick={() => setVista("clientes")}
-              icon={<Contact className="h-4 w-4" />}
-              label="Clientes"
-            />
-            <SideNav
-              activo={vista === "exportar"}
-              onClick={() => setVista("exportar")}
-              icon={<Download className="h-4 w-4" />}
-              label="Exportar"
-            />
-            <SideNav
-              activo={vista === "config"}
-              onClick={() => setVista("config")}
-              icon={<Settings className="h-4 w-4" />}
-              label="Configuraciones"
-            />
+            {can("activos") && (
+              <SideNav
+                activo={vista === "activos"}
+                onClick={() => setVista("activos")}
+                icon={<Activity className="h-4 w-4" />}
+                label="Turnos activos"
+              />
+            )}
+            {can("reporte") && (
+              <SideNav
+                activo={vista === "reporte"}
+                onClick={() => setVista("reporte")}
+                icon={<CalendarDays className="h-4 w-4" />}
+                label="Reporte del día"
+              />
+            )}
+            {can("mover") && (
+              <SideNav
+                activo={vista === "mover"}
+                onClick={() => setVista("mover")}
+                icon={<ArrowLeftRight className="h-4 w-4" />}
+                label="Mover trabajador"
+              />
+            )}
+            {can("usuarios") && (
+              <SideNav
+                activo={vista === "usuarios"}
+                onClick={() => setVista("usuarios")}
+                icon={<Users className="h-4 w-4" />}
+                label="Usuarios"
+              />
+            )}
+            {can("clientes") && (
+              <SideNav
+                activo={vista === "clientes"}
+                onClick={() => setVista("clientes")}
+                icon={<Contact className="h-4 w-4" />}
+                label="Clientes"
+              />
+            )}
+            {can("exportar") && (
+              <SideNav
+                activo={vista === "exportar"}
+                onClick={() => setVista("exportar")}
+                icon={<Download className="h-4 w-4" />}
+                label="Exportar"
+              />
+            )}
+            {can("config") && (
+              <SideNav
+                activo={vista === "config"}
+                onClick={() => setVista("config")}
+                icon={<Settings className="h-4 w-4" />}
+                label="Configuraciones"
+              />
+            )}
           </nav>
 
           {vista === "activos" ? (
@@ -963,6 +1021,7 @@ export default function AdminPage() {
                 onAddRegistro={onAddRegistro}
                 onUpdateOdometro={onUpdateOdometro}
                 onSetPreciosSesion={onSetPreciosSesion}
+                mostrarVentaNormal={can("venta-normal")}
               />
             ) : (
               <div className="rounded-2xl border border-border/60 bg-card py-20 text-center text-sm text-muted-foreground shadow-sm">
@@ -1506,6 +1565,22 @@ export default function AdminPage() {
                         Agregar
                       </Button>
                     </div>
+                    {/* Permisos del nuevo admin: qué secciones podrá ver */}
+                    <div className="mb-3 rounded-lg border border-amber-200/70 bg-white/60 p-2 dark:border-amber-500/20 dark:bg-black/20">
+                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Permisos del nuevo admin
+                      </p>
+                      <PermisosGrid
+                        seleccionados={nuevoAdminPermisos}
+                        onToggle={(p) =>
+                          setNuevoAdminPermisos((prev) =>
+                            prev.includes(p)
+                              ? prev.filter((x) => x !== p)
+                              : [...prev, p]
+                          )
+                        }
+                      />
+                    </div>
                     {admins.length === 0 ? (
                       <p className="text-xs text-muted-foreground">
                         Aún no hay administradores creados.
@@ -1515,23 +1590,35 @@ export default function AdminPage() {
                         {admins.map((a) => (
                           <div
                             key={a.id}
-                            className="flex items-center justify-between gap-2 rounded-lg border bg-card p-2 text-sm"
+                            className="rounded-lg border bg-card p-2 text-sm"
                           >
-                            <span className="flex items-center gap-2">
-                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-xs font-bold text-white">
-                                {a.nombre[0]?.toUpperCase()}
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="flex items-center gap-2">
+                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-xs font-bold text-white">
+                                  {a.nombre[0]?.toUpperCase()}
+                                </span>
+                                <span className="font-medium">{a.nombre}</span>
                               </span>
-                              <span className="font-medium">{a.nombre}</span>
-                            </span>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2 text-red-500 hover:text-red-600"
-                              onClick={() => quitarAdmin(a.id)}
-                              title="Eliminar administrador"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-red-500 hover:text-red-600"
+                                onClick={() => quitarAdmin(a.id)}
+                                title="Eliminar administrador"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                            {/* Permisos editables de este admin */}
+                            <div className="mt-2 border-t pt-2">
+                              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                Puede ver
+                              </p>
+                              <PermisosGrid
+                                seleccionados={a.permisos ?? PERMISOS_TODOS}
+                                onToggle={(p) => togglePermisoAdmin(a.id, p)}
+                              />
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1826,6 +1913,40 @@ function PreciosEditor({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Cuadrícula de casillas para elegir qué secciones puede ver un admin. Se usa
+// tanto al crear un admin nuevo como al editar uno existente.
+function PermisosGrid({
+  seleccionados,
+  onToggle,
+}: {
+  seleccionados: Permiso[];
+  onToggle: (p: Permiso) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+      {PERMISOS.map((p) => {
+        const activo = seleccionados.includes(p.id);
+        return (
+          <label
+            key={p.id}
+            className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-accent"
+          >
+            <input
+              type="checkbox"
+              checked={activo}
+              onChange={() => onToggle(p.id)}
+              className="h-3.5 w-3.5 accent-amber-500"
+            />
+            <span className={cn(!activo && "text-muted-foreground")}>
+              {p.label}
+            </span>
+          </label>
+        );
+      })}
+    </div>
   );
 }
 

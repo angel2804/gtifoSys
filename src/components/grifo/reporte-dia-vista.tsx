@@ -98,6 +98,9 @@ interface Props {
   // El admin corrige el precio de un turno (p. ej. cambio de las 2pm o un
   // tipeo). Reemplaza el snapshot de precios de esa sesión.
   onSetPreciosSesion: (sesionId: string, precios: Precios) => void;
+  // Muestra la tabla "Venta a precio normal". Se oculta para admins sin ese
+  // permiso. Por defecto visible.
+  mostrarVentaNormal?: boolean;
 }
 
 function productoOpts(s: Sesion) {
@@ -116,6 +119,7 @@ export function ReporteDiaVista({
   onAddRegistro,
   onUpdateOdometro,
   onSetPreciosSesion,
+  mostrarVentaNormal = true,
 }: Props) {
   // Turno específico (mañana/tarde/noche) o "general" (todo el día). Isla opcional.
   const [filtroTurno, setFiltroTurno] = useState<string>("manana");
@@ -661,7 +665,7 @@ export function ReporteDiaVista({
       </div>
 
       {/* Venta a precio normal por producto */}
-      {rep.porProducto.length > 0 && (
+      {mostrarVentaNormal && rep.porProducto.length > 0 && (
         <div className="rounded-xl border bg-card p-4 shadow-sm">
           <div className="mb-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             Venta a precio normal

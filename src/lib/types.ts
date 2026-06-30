@@ -13,12 +13,29 @@ export type BalonTipo = "gasfull" | "zetagas";
 export type PrecioKey = ProductoId | BalonTipo;
 export type Precios = Record<PrecioKey, number>;
 
+// Secciones del panel admin que pueden activarse/desactivarse por cada
+// administrador. Los ids que coinciden con una vista del panel comparten su
+// nombre; "venta-normal" es una subsección dentro del Reporte del día.
+export type Permiso =
+  | "activos"
+  | "reporte"
+  | "venta-normal"
+  | "mover"
+  | "usuarios"
+  | "clientes"
+  | "exportar"
+  | "config";
+
 // Administrador con nombre y contraseña, gestionado por el desarrollador en
 // Configuraciones. Aparece en la lista de login de admin.
 export interface Admin {
   id: string;
   nombre: string;
   password: string;
+  // Secciones que este admin puede ver. Si es `undefined` (admins creados
+  // antes de existir los permisos) se interpreta como acceso total, para no
+  // romper la compatibilidad. La contraseña maestra siempre ve todo.
+  permisos?: Permiso[];
 }
 
 export interface Manguera {
